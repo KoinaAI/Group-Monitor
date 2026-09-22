@@ -1,0 +1,14 @@
+# backend
+backend/napnotifier
+config.json
+config.json.tmp
+# frontend
+frontend/node_modules/
+# misc
+*.log
+# login artifacts (temporary credentials, must not be in history)
+napcat-login-qr.png
+qrcode.png
+# claude code local settings
+.claude/settings.local.json
+.claude/*.tmp.*
