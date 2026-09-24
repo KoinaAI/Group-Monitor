@@ -1,0 +1,174 @@
+import { Suspense, useEffect } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { AppLayout as ProLayout, Navbar, Sidebar, useSidebar } from '@heroui-pro/react'
+import { Button } from '@heroui/react'
+import { Loader } from './Loader'
+import { ThemeToggle } from './ThemeToggle'
+import { AppIcon } from '../lib/icons'
+import { NAV, NAV_TITLE } from '../config/nav'
+import { api } from '../lib/api'
+import { useApi } from '../lib/useApi'
+import { connectLiveStream, useLive } from '../lib/store'
+
+// The HeroUI Pro application shell: an AppLayout hosting a collapsible Sidebar
+// (grouped nav from ../config/nav) plus a top Navbar, with the routed page in
+// the main slot. AppLayout provides its own Sidebar.Provider — we must NOT add
+// one. The authed area also owns the live SSE stream (opened on mount, closed
+// on unmount) so every page reads from one shared zustand store.
+
+// Brand block. The text collapses away in icon-rail mode: HeroUI hides spans
+// marked data-sidebar="label" when the sidebar is collapsed to icons.
+function Brand() {
+  return (
+    <div className="flex items-center gap-2.5 px-1.5 py-1">
+      <img src="/sentinel.svg" alt="" className="size-7 shrink-0" />
+      <div
+        className="min-w-0 leading-tight group-data-[state=collapsed]:hidden"
+        data-sidebar="label"
+      >
+        <p className="truncate text-sm font-semibold text-foreground">群哨</p>
+        <p className="truncate text-xs text-muted">QQ 群通知助手</p>
+      </div>
+    </div>
+  )
+}
+
+// Account + NapCat connection state, with logout. Connection is live (SSE
+// store); the nickname comes from a one-shot GET /api/status.
+function AccountFooter() {
+  const navigate = useNavigate()
+  const { collapsible, isMobile, isOpen } = useSidebar()
+  const collapsed = collapsible === 'icon' && !isMobile && !isOpen
+  const connected = useLive((s) => s.status?.onebotConnected ?? false)
+  const selfId = useLive((s) => s.status?.selfId ?? 0)
+  const { data: status } = useApi(api.status, [])
+  const name = status?.account?.nickname || (selfId ? String(selfId) : 'NapCat')
+
+  const logout = () =>
+    api.auth.logout().finally(() => navigate('/login', { replace: true }))
+
+  const logoutBtn = (
+    <Button isIconOnly size="sm" variant="ghost" aria-label="退出登录" onPress={logout}>
+      <AppIcon name="logout" className="size-4" />
+    </Button>
+  )
+
+  // Icon rail: the label collapses away, so a horizontal dot+text+button row
+  // would overflow 48px. Stack a status dot above the logout button instead,
+  // both centered.
+  if (collapsed) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-1">
+        <span
+          className={`size-2 rounded-full ${connected ? 'bg-success' : 'bg-muted'}`}
+          aria-label={connected ? 'NapCat 已连接' : 'NapCat 未连接'}
+        />
+        {logoutBtn}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-1.5 py-1">
+      <span
+        className={`size-2 shrink-0 rounded-full ${connected ? 'bg-success' : 'bg-muted'}`}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1 leading-tight" data-sidebar="label">
+        <p className="truncate text-xs font-medium text-foreground">{name}</p>
+        <p className="truncate text-[11px] text-muted">
+          {connected ? 'NapCat 已连接' : 'NapCat 未连接'}
+        </p>
+      </div>
+      {logoutBtn}
+    </div>
+  )
+}
+
+// Header + grouped menu + footer. Rendered identically in the desktop rail and
+// the mobile drawer.
+function SidebarInner() {
+  const { pathname } = useLocation()
+  return (
+    <>
+      <Sidebar.Header>
+        <Brand />
+      </Sidebar.Header>
+      <Sidebar.Content>
+        {NAV.map((section) => (
+          <Sidebar.Group key={section.title}>
+            <Sidebar.GroupLabel>{section.title}</Sidebar.GroupLabel>
+            <Sidebar.Menu aria-label={section.title}>
+              {section.items.map((item) => (
+                <Sidebar.MenuItem
+                  key={item.to}
+                  id={item.to}
+                  href={item.to}
+                  textValue={item.label}
+                  isCurrent={pathname === item.to}
+                >
+                  <Sidebar.MenuIcon>
+                    <AppIcon name={item.icon} className="size-4" />
+                  </Sidebar.MenuIcon>
+                  <Sidebar.MenuLabel>{item.label}</Sidebar.MenuLabel>
+                </Sidebar.MenuItem>
+              ))}
+            </Sidebar.Menu>
+          </Sidebar.Group>
+        ))}
+      </Sidebar.Content>
+      <Sidebar.Footer>
+        <AccountFooter />
+      </Sidebar.Footer>
+    </>
+  )
+}
+
+// Top bar: mobile menu toggle + desktop collapse trigger + page title.
+function TopNav() {
+  const { pathname } = useLocation()
+  const title = NAV_TITLE[pathname] ?? '群哨'
+  return (
+    <Navbar maxWidth="full">
+      <Navbar.Header>
+        <ProLayout.MenuToggle />
+        <Sidebar.Trigger />
+        <span className="ml-1 text-sm font-semibold text-foreground">
+          {title}
+        </span>
+        <Navbar.Spacer />
+        <ThemeToggle />
+      </Navbar.Header>
+    </Navbar>
+  )
+}
+
+export function AppLayout() {
+  useEffect(() => {
+    const stop = connectLiveStream()
+    const { seedEscalations, seedLogs } = useLive.getState()
+    api.escalations().then(seedEscalations).catch(() => {})
+    api.logs().then(seedLogs).catch(() => {})
+    return stop
+  }, [])
+
+  return (
+    <ProLayout
+      navbar={<TopNav />}
+      sidebar={
+        <>
+          <Sidebar className="group">
+            <SidebarInner />
+          </Sidebar>
+          <Sidebar.Mobile>
+            <SidebarInner />
+          </Sidebar.Mobile>
+        </>
+      }
+    >
+      <Suspense fallback={<Loader label="正在加载…" />}>
+        <Outlet />
+      </Suspense>
+    </ProLayout>
+  )
+}

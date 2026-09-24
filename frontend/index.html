@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/sentinel.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // Apply the saved theme before first paint to avoid a flash of the wrong
+      // mode. Mirrors src/lib/theme.ts — keep the storage key ('nap-theme') and
+      // this logic in sync with that module.
+      (function () {
+        try {
+          var v = localStorage.getItem('nap-theme');
+          var pref = v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
+          var dark =
+            pref === 'dark' ||
+            (pref === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
+    <title>群哨 · 控制台</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

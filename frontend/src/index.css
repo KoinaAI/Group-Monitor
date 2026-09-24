@@ -1,0 +1,34 @@
+@import "tailwindcss";
+@import "@heroui/styles";
+@import "@heroui-pro/react/css";
+
+/* Class-based dark mode. HeroUI keys its dark tokens off a `.dark` ancestor,
+   which we set on <html> in index.html. `@custom-variant` is the Tailwind v4
+   directive that *defines* the `dark` variant, overriding its default
+   prefers-color-scheme behavior; the `.dark, .dark *` selector covers both the
+   <html> element itself and everything under it. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* HeroUI's semantic canvas token; it flips with the `.dark` class. (The old
+     `--heroui-background` name doesn't exist in this version and silently fell
+     back to a hardcoded dark value, so light mode showed a black canvas.) The
+     `Canvas` system-color fallback tracks `color-scheme` for the brief moment
+     before the stylesheet resolves, avoiding a flash. */
+  background-color: var(--background, Canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Thin, unobtrusive scrollbars that match the dark surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklch, currentColor 18%, transparent) transparent;
+}

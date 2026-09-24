@@ -8,8 +8,10 @@ import (
 )
 
 func main() {
-	// Bind to loopback by default: the Node frontend (with its password gate) is the
-	// only intended public surface. Override with NAP_ADDR only behind another gate.
+	// Bind to loopback by default. Authentication now lives in this backend
+	// (OTP + break-glass password → session cookie), but binding to 127.0.0.1
+	// keeps the attack surface local unless you deliberately expose it. Set
+	// NAP_PASSWORD to enable break-glass login when NapCat/masters are offline.
 	addr := envOr("NAP_ADDR", "127.0.0.1:8787")
 	cfgPath := envOr("NAP_CONFIG", "config.json")
 
@@ -72,9 +74,34 @@ func watchConnection(ob *OneBot, hub *Hub) {
 	}
 }
 
+// logRW wraps http.ResponseWriter to capture the status code for the access
+// log while preserving the http.Flusher behaviour that SSE (/api/events)
+// depends on. A wrapper that doesn't forward Flush would silently break the
+// live event stream.
+type logRW struct {
+	http.ResponseWriter
+	status int
+}
+
+func (l *logRW) WriteHeader(code int) {
+	l.status = code
+	l.ResponseWriter.WriteHeader(code)
+}
+
+func (l *logRW) Flush() {
+	if f, ok := l.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// logMiddleware writes a one-line access log per request. Status defaults to 200
+// for handlers that write a body without an explicit WriteHeader.
 func logMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, r)
+		start := time.Now()
+		lw := &logRW{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(lw, r)
+		log.Printf("[nap] %s %s -> %d (%s)", r.Method, r.URL.Path, lw.status, time.Since(start).Round(time.Millisecond))
 	})
 }
 

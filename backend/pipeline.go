@@ -317,11 +317,9 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 	}
 	// Highest sender level in the batch drives elevation.
 	topLevel := LvlNormal
-	topLabel := "普通成员"
 	for _, s := range batch {
 		if s.senderLevel > topLevel {
 			topLevel = s.senderLevel
-			topLabel = s.senderLabel
 		}
 	}
 	transcript := buildTranscript(groupName, batch)
@@ -343,7 +341,7 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 		return
 	}
 
-	res, raw, err := callLLM(cfg.LLM, transcript)
+	res, _, err := callLLM(cfg.LLM, transcript)
 	if err != nil {
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
@@ -352,7 +350,6 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 		}
 		return
 	}
-	_ = raw
 
 	// Elevate level if an owner/admin/VIP is involved.
 	if cfg.Rules.ElevateOwnerAdmin && topLevel >= LvlAdmin && res.Level < 2 {
@@ -369,7 +366,6 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 		p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("LLM 判定 %d 条为噪音已过滤：%s", len(batch), res.Reason))
 		return
 	}
-	_ = topLabel
 	p.escalate(cfg, groupID, groupName, res, urgent)
 }
 

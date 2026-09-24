@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -383,28 +384,71 @@ func (o *OneBot) SendPrivateMsg(userID int64, text string) error {
 	return err
 }
 
-// HistoryMsg is one flattened entry from a group's message history, shaped for
-// the chat-log view (no classification, just who-said-what-when).
-type HistoryMsg struct {
-	MessageID int64  `json:"messageId"`
-	UserID    int64  `json:"userId"`
-	Nickname  string `json:"nickname"` // card if present, else nickname
-	Role      string `json:"role"`     // owner | admin | member
-	Time      int64  `json:"time"`     // unix seconds
-	Text      string `json:"text"`     // flattened plain text
-	HasImage  bool   `json:"hasImage"`
-	IsSelf    bool   `json:"isSelf"`
+// HistoryFile is one downloadable file segment inside a history message. Its
+// download URL is resolved on demand via /api/groups/file-url (get_group_file_url),
+// since group-file links are short-lived and signed.
+type HistoryFile struct {
+	Name   string `json:"name"`
+	FileID string `json:"fileId"`
+	Size   int64  `json:"size"`
+	Busid  int64  `json:"busid"`
+	URL    string `json:"url,omitempty"` // set only if the segment already carried one
 }
 
-// GetGroupMsgHistory fetches up to count recent messages for a group and
-// flattens them for display. message_seq:0 asks NapCat for the latest window.
-func (o *OneBot) GetGroupMsgHistory(groupID int64, count int) ([]HistoryMsg, error) {
+// ReplyQuote is a compact preview of the message a reply segment quotes, so the
+// UI can show the original text instead of a bare "[引用]" placeholder.
+type ReplyQuote struct {
+	UserID   int64  `json:"userId"`
+	Nickname string `json:"nickname"`
+	Text     string `json:"text"`
+}
+
+// MsgSegment is one structured piece of a history message. It lets the frontend
+// render media, @-mentions and quotes natively (inline image/voice/video, @name,
+// quoted original) rather than the bracket placeholders flattenMessage emits for
+// the live feed. Only the fields relevant to Type are populated.
+type MsgSegment struct {
+	Type  string      `json:"type"`            // text|at|image|face|record|video|reply|card|forward
+	Text  string      `json:"text,omitempty"`  // text body; face/card/forward label
+	Name  string      `json:"name,omitempty"`  // at: resolved display name
+	ID    int64       `json:"id,omitempty"`    // at: target QQ (0 = @全体成员)
+	URL   string      `json:"url,omitempty"`   // image/record/video source
+	File  string      `json:"file,omitempty"`  // record: NapCat voice file id, for server-side mp3 transcode
+	Reply *ReplyQuote `json:"reply,omitempty"` // reply: the quoted original
+}
+
+// HistoryMsg is one flattened entry from a group's message history, shaped for
+// the chat-log view (no classification, just who-said-what-when). Text/HasImage
+// stay for backward-compat; Segments carries the structured render (preferred).
+type HistoryMsg struct {
+	MessageID  int64         `json:"messageId"`
+	MessageSeq int64         `json:"messageSeq"` // pagination cursor for older batches
+	UserID     int64         `json:"userId"`
+	Nickname   string        `json:"nickname"` // card if present, else nickname
+	Role       string        `json:"role"`     // owner | admin | member
+	Title      string        `json:"title"`    // custom group title (头衔), if any
+	Time       int64         `json:"time"`     // unix seconds
+	Text       string        `json:"text"`     // flattened plain text (fallback)
+	HasImage   bool          `json:"hasImage"`
+	Files      []HistoryFile `json:"files,omitempty"`
+	Segments   []MsgSegment  `json:"segments,omitempty"`
+	IsSelf     bool          `json:"isSelf"`
+}
+
+// GetGroupMsgHistory fetches up to count messages for a group and flattens them
+// for display. beforeSeq is a pagination cursor: 0 asks NapCat for the latest
+// window; a non-zero value anchors on that message_seq so the frontend can
+// lazy-load older batches. Messages come back oldest-first.
+func (o *OneBot) GetGroupMsgHistory(groupID int64, count int, beforeSeq int64) ([]HistoryMsg, error) {
 	if count <= 0 || count > 60 {
 		count = 30
 	}
+	if beforeSeq < 0 {
+		beforeSeq = 0
+	}
 	data, err := o.call("get_group_msg_history", map[string]any{
 		"group_id":    groupID,
-		"message_seq": 0,
+		"message_seq": beforeSeq,
 		"count":       count,
 	})
 	if err != nil {
@@ -422,15 +466,37 @@ func (o *OneBot) GetGroupMsgHistory(groupID int64, count int) ([]HistoryMsg, err
 		env.Messages = arr
 	}
 	self := o.SelfID()
+	// Resolve @-mention names from a single member-list call, and quoted
+	// originals from get_msg (cached per batch). Both are best-effort: on any
+	// failure the UI falls back to the raw QQ id / a "[消息]" stub.
+	members := o.GetGroupMemberList(groupID)
+	nameOf := func(id int64) string { return members[id] }
+	quoteCache := map[int64]*ReplyQuote{}
+	quoteOf := func(id int64) *ReplyQuote {
+		if id == 0 {
+			return nil
+		}
+		if q, ok := quoteCache[id]; ok {
+			return q
+		}
+		q := o.GetMsg(id)
+		quoteCache[id] = q
+		return q
+	}
 	out := make([]HistoryMsg, 0, len(env.Messages))
 	for _, raw := range env.Messages {
 		hm := HistoryMsg{
-			MessageID: toInt64(raw["message_id"]),
-			UserID:    toInt64(raw["user_id"]),
-			Time:      toInt64(raw["time"]),
+			MessageID:  toInt64(raw["message_id"]),
+			MessageSeq: toInt64(raw["message_seq"]),
+			UserID:     toInt64(raw["user_id"]),
+			Time:       toInt64(raw["time"]),
+		}
+		if hm.MessageSeq == 0 {
+			hm.MessageSeq = toInt64(raw["real_seq"]) // some builds name it real_seq
 		}
 		if s, ok := raw["sender"].(map[string]any); ok {
 			hm.Role, _ = s["role"].(string)
+			hm.Title, _ = s["title"].(string)
 			card, _ := s["card"].(string)
 			nick, _ := s["nickname"].(string)
 			if strings.TrimSpace(card) != "" {
@@ -443,10 +509,233 @@ func (o *OneBot) GetGroupMsgHistory(groupID int64, count int) ([]HistoryMsg, err
 			hm.Role = "member"
 		}
 		hm.Text, _, _, hm.HasImage = flattenMessage(raw["message"], self)
+		hm.Files = extractFiles(raw["message"])
+		hm.Segments = buildSegments(raw["message"], self, nameOf, quoteOf)
 		hm.IsSelf = hm.UserID == self && self != 0
 		out = append(out, hm)
 	}
 	return out, nil
+}
+
+// extractFiles pulls structured file segments out of an OneBot array message so
+// the UI can render download cards. String (non-array) messages have none.
+func extractFiles(msg any) []HistoryFile {
+	arr, ok := msg.([]any)
+	if !ok {
+		return nil
+	}
+	var files []HistoryFile
+	for _, seg := range arr {
+		sm, ok := seg.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := sm["type"].(string); t != "file" {
+			continue
+		}
+		data, _ := sm["data"].(map[string]any)
+		if data == nil {
+			continue
+		}
+		f := HistoryFile{Busid: toInt64(data["busid"]), Size: toInt64(data["file_size"])}
+		f.Name, _ = data["file"].(string)
+		f.FileID = toStr(data["file_id"])
+		if f.FileID == "" {
+			f.FileID = toStr(data["file_unique"])
+		}
+		f.URL, _ = data["url"].(string)
+		files = append(files, f)
+	}
+	return files
+}
+
+// buildSegments renders an OneBot array message into structured segments for the
+// history view. names resolves a QQ id to a group display name; quote resolves a
+// quoted message id to its original. Both are best-effort (may return a zero
+// value / nil). File segments are skipped here — extractFiles renders them as
+// download cards. A string (non-array) message yields a single text segment.
+func buildSegments(msg any, selfID int64, names func(int64) string, quote func(int64) *ReplyQuote) []MsgSegment {
+	pick := func(d map[string]any) string {
+		if u := toStr(d["url"]); u != "" {
+			return u
+		}
+		if f := toStr(d["file"]); strings.HasPrefix(f, "http") {
+			return f
+		}
+		return ""
+	}
+	arr, ok := msg.([]any)
+	if !ok {
+		if s, _ := msg.(string); strings.TrimSpace(s) != "" {
+			return []MsgSegment{{Type: "text", Text: s}}
+		}
+		return nil
+	}
+	out := make([]MsgSegment, 0, len(arr))
+	for _, seg := range arr {
+		sm, ok := seg.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := sm["type"].(string)
+		data, _ := sm["data"].(map[string]any)
+		if data == nil {
+			data = map[string]any{}
+		}
+		switch typ {
+		case "text":
+			if t, _ := data["text"].(string); t != "" {
+				out = append(out, MsgSegment{Type: "text", Text: t})
+			}
+		case "at":
+			if fmt.Sprint(data["qq"]) == "all" {
+				out = append(out, MsgSegment{Type: "at", Name: "全体成员"})
+				break
+			}
+			id := toInt64(data["qq"])
+			name, _ := data["name"].(string)
+			if strings.TrimSpace(name) == "" && names != nil {
+				name = names(id)
+			}
+			if strings.TrimSpace(name) == "" {
+				name = fmt.Sprintf("%d", id)
+			}
+			out = append(out, MsgSegment{Type: "at", ID: id, Name: name})
+		case "image":
+			out = append(out, MsgSegment{Type: "image", URL: pick(data)})
+		case "record":
+			out = append(out, MsgSegment{Type: "record", URL: pick(data), File: toStr(data["file"])})
+		case "video":
+			out = append(out, MsgSegment{Type: "video", URL: pick(data)})
+		case "face":
+			out = append(out, MsgSegment{Type: "face", Text: "[表情]"})
+		case "reply":
+			out = append(out, MsgSegment{Type: "reply", Reply: quote(toInt64(data["id"]))})
+		case "json", "xml":
+			out = append(out, MsgSegment{Type: "card", Text: "[卡片]"})
+		case "forward":
+			out = append(out, MsgSegment{Type: "forward", Text: "[聊天记录]"})
+		case "markdown":
+			if c, _ := data["content"].(string); c != "" {
+				out = append(out, MsgSegment{Type: "text", Text: c})
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// GetGroupMemberList fetches a group's members and returns an id→display-name
+// map (card if set, else nickname). Best-effort: on any failure it returns an
+// empty map so callers fall back to the raw QQ id. Used to resolve @-mention
+// names in history without a per-mention round-trip.
+func (o *OneBot) GetGroupMemberList(groupID int64) map[int64]string {
+	out := map[int64]string{}
+	data, err := o.call("get_group_member_list", map[string]any{"group_id": groupID})
+	if err != nil {
+		return out
+	}
+	var members []struct {
+		UserID   int64  `json:"user_id"`
+		Card     string `json:"card"`
+		Nickname string `json:"nickname"`
+	}
+	if err := json.Unmarshal(data, &members); err != nil {
+		return out
+	}
+	for _, m := range members {
+		if strings.TrimSpace(m.Card) != "" {
+			out[m.UserID] = m.Card
+		} else {
+			out[m.UserID] = m.Nickname
+		}
+	}
+	return out
+}
+
+// GetMsg resolves one message id to a compact quote preview (sender name +
+// flattened text) for rendering reply segments. Best-effort: returns a "[消息]"
+// stub on any failure so the UI still shows something for the quoted original.
+func (o *OneBot) GetMsg(messageID int64) *ReplyQuote {
+	data, err := o.call("get_msg", map[string]any{"message_id": messageID})
+	if err != nil {
+		return &ReplyQuote{Text: "[消息]"}
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return &ReplyQuote{Text: "[消息]"}
+	}
+	q := &ReplyQuote{UserID: toInt64(raw["user_id"])}
+	if s, ok := raw["sender"].(map[string]any); ok {
+		card, _ := s["card"].(string)
+		nick, _ := s["nickname"].(string)
+		if strings.TrimSpace(card) != "" {
+			q.Nickname = card
+		} else {
+			q.Nickname = nick
+		}
+	}
+	q.Text, _, _, _ = flattenMessage(raw["message"], o.SelfID())
+	if strings.TrimSpace(q.Text) == "" {
+		q.Text = "[消息]"
+	}
+	return q
+}
+
+// GetGroupFileURL resolves a short-lived download URL for a group file. busid is
+// optional (0 omits it) for newer NapCat builds that key only on file_id.
+func (o *OneBot) GetGroupFileURL(groupID int64, fileID string, busid int64) (string, error) {
+	params := map[string]any{"group_id": groupID, "file_id": fileID}
+	if busid != 0 {
+		params["busid"] = busid
+	}
+	data, err := o.call("get_group_file_url", params)
+	if err != nil {
+		return "", err
+	}
+	var r struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return "", err
+	}
+	return r.URL, nil
+}
+
+// GetRecordMP3 transcodes a group voice message to MP3 via NapCat's get_record
+// (ffmpeg under the hood) and returns the decoded bytes. QQ voice is AMR/SILK,
+// which no browser plays natively — and the CDN download even mislabels the AMR
+// as audio/mp3, so a direct <audio src=cdn> just fails to load. get_record hands
+// back the transcoded audio inline as base64 (the file/url it also returns are
+// paths inside the NapCat container, unreachable from here), so we decode that.
+func (o *OneBot) GetRecordMP3(file string) ([]byte, error) {
+	data, err := o.call("get_record", map[string]any{"file": file, "out_format": "mp3"})
+	if err != nil {
+		return nil, err
+	}
+	var r struct {
+		Base64 string `json:"base64"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	if r.Base64 == "" {
+		return nil, fmt.Errorf("get_record 未返回音频数据")
+	}
+	// Some builds prefix a data: URI scheme on the base64; tolerate both forms.
+	b64 := r.Base64
+	if strings.HasPrefix(b64, "data:") {
+		if i := strings.Index(b64, ","); i >= 0 {
+			b64 = b64[i+1:]
+		}
+	}
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return nil, fmt.Errorf("解码音频失败：%w", err)
+	}
+	return raw, nil
 }
 
 // ---- helpers ----
@@ -468,6 +757,23 @@ func toInt64(v any) int64 {
 		return i
 	}
 	return 0
+}
+
+func toStr(v any) string {
+	switch s := v.(type) {
+	case string:
+		return s
+	case float64:
+		return fmt.Sprintf("%d", int64(s))
+	case int64:
+		return fmt.Sprintf("%d", s)
+	case json.Number:
+		return s.String()
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(v)
+	}
 }
 
 func truncate(s string, n int) string {

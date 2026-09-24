@@ -85,11 +85,15 @@ func (h *Hub) Log(level string, groupID int64, group, text string) {
 	h.Broadcast("log", e)
 }
 
+// RecentLogs returns the recent log entries, newest first, to match the
+// frontend's unshift ordering (and RecentEscalations).
 func (h *Hub) RecentLogs() []LogEntry {
 	h.logMu.RLock()
 	defer h.logMu.RUnlock()
 	out := make([]LogEntry, len(h.logs))
-	copy(out, h.logs)
+	for i, e := range h.logs {
+		out[len(h.logs)-1-i] = e
+	}
 	return out
 }
 

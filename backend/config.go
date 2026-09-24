@@ -71,6 +71,27 @@ type Master struct {
 	// MinLevel: only escalations at or above this urgency reach this master.
 	// 0 = everything useful, 1 = normal+, 2 = important+, 3 = urgent only.
 	MinLevel int `json:"minLevel"`
+	// Kind gates privilege. "" (default) / "full" = a full master: receives
+	// escalations AND is a login-OTP recipient with bot authority. "notify" =
+	// notify-only: still receives escalation/test pushes (a sharing target) but
+	// has NO login path — excluded from the login-OTP fan-out and the master
+	// count that unlocks OTP login.
+	Kind string `json:"kind,omitempty"`
+}
+
+// IsFull reports whether m carries full privileges (login-OTP eligible). Empty
+// Kind means full, so configs written before notify-only existed keep working.
+func (m Master) IsFull() bool { return m.Kind != "notify" }
+
+// FullMasters returns only the masters eligible to receive the login OTP.
+func (c Config) FullMasters() []Master {
+	out := make([]Master, 0, len(c.Masters))
+	for _, m := range c.Masters {
+		if m.IsFull() {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 type GroupWatch struct {
@@ -134,9 +155,12 @@ func defaultConfig() Config {
 			Temp:   0.2,
 		},
 		Jev: JevConfig{
-			Enabled:   true,
-			BaseURL:   "https://api.typesafe.ai/v1/systemone",
-			APIKey:    "apikey_21093d0a5d87a5134f5b91178edec3171bfd_49a3782ae0a14476a576acccc2e6c123472f465668ba0d4b99576ea8d4260187",
+			Enabled: true,
+			BaseURL: "https://api.typesafe.ai/v1/systemone",
+			// APIKey is intentionally empty: it's a secret and must not be baked
+			// into source. Supply it via config.json (gitignored) or the /api/jev
+			// endpoint. With no key the gate fails open (buffers, doesn't drop).
+			APIKey:    "",
 			Model:     "jev-latest",
 			Threshold: 0.6,
 			ContextN:  6,
