@@ -1,7 +1,7 @@
 import { Suspense, useEffect } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AppLayout as ProLayout, Navbar, Sidebar, useSidebar } from '@heroui-pro/react'
-import { Button } from '@heroui/react'
+import { Button, Tooltip } from '@heroui/react'
 import { Loader } from './Loader'
 import { ThemeToggle } from './ThemeToggle'
 import { AppIcon } from '../lib/icons'
@@ -48,9 +48,12 @@ function AccountFooter() {
     api.auth.logout().finally(() => navigate('/login', { replace: true }))
 
   const logoutBtn = (
-    <Button isIconOnly size="sm" variant="ghost" aria-label="退出登录" onPress={logout}>
-      <AppIcon name="logout" className="size-4" />
-    </Button>
+    <Tooltip>
+      <Button isIconOnly size="sm" variant="ghost" aria-label="退出登录" onPress={logout}>
+        <AppIcon name="logout" className="size-4" />
+      </Button>
+      <Tooltip.Content>退出登录</Tooltip.Content>
+    </Tooltip>
   )
 
   // Icon rail: the label collapses away, so a horizontal dot+text+button row

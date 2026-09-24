@@ -1,4 +1,4 @@
-import { Avatar, Button, Label, ListBox, Select } from '@heroui/react'
+import { Avatar, Button, Label, ListBox, Select, Tooltip } from '@heroui/react'
 import { AppIcon } from '../../lib/icons'
 import { masterKindLabel, minLevelLabel } from '../../lib/labels'
 import { IntentChip } from '../../components/ui/IntentChip'
@@ -61,9 +61,12 @@ export function MasterRow({
           </ListBox>
         </Select.Popover>
       </Select>
-      <Button size="sm" variant="danger-soft" isIconOnly aria-label="移除主人" onPress={onRemove}>
-        <AppIcon name="remove" className="size-4" />
-      </Button>
+      <Tooltip>
+        <Button size="sm" variant="danger-soft" isIconOnly aria-label="移除主人" onPress={onRemove}>
+          <AppIcon name="remove" className="size-4" />
+        </Button>
+        <Tooltip.Content>移除主人</Tooltip.Content>
+      </Tooltip>
     </li>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Input, Label, ListBox, Select, TextField } from '@heroui/react'
+import { Button, Input, Label, ListBox, Select, TextField, Tooltip } from '@heroui/react'
 import { AppIcon } from '../../lib/icons'
 import { overrideLevelLabel } from '../../lib/labels'
 import type { SenderOverride, SenderOverrideLevel } from '../../lib/types'
@@ -79,15 +79,18 @@ export function OverrideEditor({
                   </ListBox>
                 </Select.Popover>
               </Select>
-              <Button
-                size="sm"
-                variant="danger-soft"
-                isIconOnly
-                aria-label="移除"
-                onPress={() => remove(o.userId)}
-              >
-                <AppIcon name="remove" className="size-4" />
-              </Button>
+              <Tooltip>
+                <Button
+                  size="sm"
+                  variant="danger-soft"
+                  isIconOnly
+                  aria-label="移除"
+                  onPress={() => remove(o.userId)}
+                >
+                  <AppIcon name="remove" className="size-4" />
+                </Button>
+                <Tooltip.Content>移除</Tooltip.Content>
+              </Tooltip>
             </li>
           ))}
         </ul>
