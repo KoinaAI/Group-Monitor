@@ -408,13 +408,14 @@ type ReplyQuote struct {
 // quoted original) rather than the bracket placeholders flattenMessage emits for
 // the live feed. Only the fields relevant to Type are populated.
 type MsgSegment struct {
-	Type  string      `json:"type"`            // text|at|image|face|record|video|reply|card|forward
-	Text  string      `json:"text,omitempty"`  // text body; face/card/forward label
-	Name  string      `json:"name,omitempty"`  // at: resolved display name
-	ID    int64       `json:"id,omitempty"`    // at: target QQ (0 = @全体成员)
-	URL   string      `json:"url,omitempty"`   // image/record/video source
-	File  string      `json:"file,omitempty"`  // record: NapCat voice file id, for server-side mp3 transcode
-	Reply *ReplyQuote `json:"reply,omitempty"` // reply: the quoted original
+	Type    string      `json:"type"`              // text|at|image|face|record|video|reply|card|forward
+	Text    string      `json:"text,omitempty"`    // text body; face/card/forward label
+	Name    string      `json:"name,omitempty"`    // at: resolved display name
+	ID      int64       `json:"id,omitempty"`      // at: target QQ (0 = @全体成员)
+	URL     string      `json:"url,omitempty"`     // image/record/video source
+	File    string      `json:"file,omitempty"`    // record: NapCat voice file id, for server-side mp3 transcode
+	Sticker bool        `json:"sticker,omitempty"` // image: a sticker/大表情 (sub_type=1 or mface) — render small
+	Reply   *ReplyQuote `json:"reply,omitempty"`   // reply: the quoted original
 }
 
 // HistoryMsg is one flattened entry from a group's message history, shaped for
@@ -446,10 +447,17 @@ func (o *OneBot) GetGroupMsgHistory(groupID int64, count int, beforeSeq int64) (
 	if beforeSeq < 0 {
 		beforeSeq = 0
 	}
+	// reverseOrder:true is essential for scroll-up paging. NapCat defaults to
+	// forward-inclusive (anchor + NEWER), so anchoring on the oldest message we
+	// already show returns only messages already on screen — the "到头就说没有更早
+	// 的消息" bug. With reverseOrder:true the same anchor returns the anchor + OLDER
+	// messages (still oldest-first), so the cursor walks backward through history.
+	// message_seq=0 stays the "from latest" sentinel and returns the newest window.
 	data, err := o.call("get_group_msg_history", map[string]any{
-		"group_id":    groupID,
-		"message_seq": beforeSeq,
-		"count":       count,
+		"group_id":     groupID,
+		"message_seq":  beforeSeq,
+		"count":        count,
+		"reverseOrder": true,
 	})
 	if err != nil {
 		return nil, err
@@ -602,7 +610,11 @@ func buildSegments(msg any, selfID int64, names func(int64) string, quote func(i
 			}
 			out = append(out, MsgSegment{Type: "at", ID: id, Name: name})
 		case "image":
-			out = append(out, MsgSegment{Type: "image", URL: pick(data)})
+			// sub_type 1 marks a sticker/大表情 (vs a real photo); QQ商城 stickers
+			// also arrive as their own "mface" segment. Both render small.
+			out = append(out, MsgSegment{Type: "image", URL: pick(data), Sticker: toStr(data["sub_type"]) == "1"})
+		case "mface":
+			out = append(out, MsgSegment{Type: "image", URL: pick(data), Sticker: true})
 		case "record":
 			out = append(out, MsgSegment{Type: "record", URL: pick(data), File: toStr(data["file"])})
 		case "video":

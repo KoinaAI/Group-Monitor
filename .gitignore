@@ -9,6 +9,11 @@ frontend/node_modules/
 # login artifacts (temporary credentials, must not be in history)
 napcat-login-qr.png
 qrcode.png
+# HeroUI Pro MCP config (contains a private access token)
+.mcp.json
+# dev-only screenshot/probe scratch scripts (embed the break-glass dev password)
+frontend/shot_*.mjs
+frontend/probe_*.mjs
 # claude code local settings
 .claude/settings.local.json
 .claude/*.tmp.*

@@ -46,42 +46,32 @@ export default function Dashboard() {
         title="总览"
         description="实时运行状态与最新升级事件"
         actions={
-          <Toggle
-            label={enabled ? '运行中' : '已暂停'}
-            isSelected={enabled}
-            onChange={toggle}
-            isDisabled={busy}
-          />
+          <>
+            <IntentChip intent={llm ? 'primary' : 'default'}>
+              LLM 蒸馏 {llm ? '启用' : '关闭'}
+            </IntentChip>
+            <IntentChip intent={jev ? 'primary' : 'default'}>
+              Jev 门控 {jev ? '启用' : '关闭'}
+            </IntentChip>
+            <Toggle
+              label={enabled ? '运行中' : '已暂停'}
+              isSelected={enabled}
+              onChange={toggle}
+              isDisabled={busy}
+            />
+          </>
         }
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
-          label="运行状态"
-          value={enabled ? '运行中' : '已暂停'}
-          icon={enabled ? 'running' : 'pause'}
-          tone={enabled ? 'success' : 'default'}
+          label="NapCat"
+          value={connected ? '已连接' : '未连接'}
+          icon={connected ? 'connected' : 'disconnected'}
+          tone={connected ? 'success' : 'danger'}
         />
         <Stat label="监听群组" value={`${watched}/${totalGroups}`} icon="groups" tone="accent" />
         <Stat label="推送主人" value={masters} icon="masters" tone="accent" />
-        <Stat
-          label="静默窗口"
-          value={`${quiet}s`}
-          icon="clock"
-          tone="default"
-          hint={connected ? 'NapCat 已连接' : 'NapCat 未连接'}
-        />
-      </div>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <IntentChip intent={connected ? 'success' : 'default'}>
-          {connected ? 'NapCat 已连接' : 'NapCat 未连接'}
-        </IntentChip>
-        <IntentChip intent={llm ? 'primary' : 'default'}>
-          LLM 蒸馏 {llm ? '启用' : '关闭'}
-        </IntentChip>
-        <IntentChip intent={jev ? 'primary' : 'default'}>
-          Jev 门控 {jev ? '启用' : '关闭'}
-        </IntentChip>
+        <Stat label="静默窗口" value={`${quiet}s`} icon="clock" tone="default" />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">

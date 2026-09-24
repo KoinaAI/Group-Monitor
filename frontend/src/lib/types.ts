@@ -137,6 +137,7 @@ export interface MsgSegment {
   id?: number // at: target QQ (0 = @全体成员)
   url?: string // image/record/video source
   file?: string // record: NapCat voice file id, for server-side mp3 transcode
+  sticker?: boolean // image: a sticker/大表情 (render small, natural size)
   reply?: ReplyQuote // reply: the quoted original
 }
 export interface HistoryMsg {

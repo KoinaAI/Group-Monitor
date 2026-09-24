@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { Avatar, Button, Spinner } from '@heroui/react'
+import { Avatar, Button, Modal, Spinner } from '@heroui/react'
 import { Page } from '../../components/Page'
 import { SectionCard } from '../../components/ui/SectionCard'
 import { EmptyState, InlineError } from '../../components/ui/States'
 import { Loader } from '../../components/Loader'
 import { IntentChip } from '../../components/ui/IntentChip'
-import { AppIcon } from '../../lib/icons'
+import { AppIcon, type IconName } from '../../lib/icons'
 import { api, ApiError } from '../../lib/api'
 import { userAvatar, groupAvatar } from '../../lib/qlogo'
 import { fmtDateTime, secToMs } from '../../lib/time'
@@ -29,38 +30,197 @@ function fmtBytes(n: number): string {
   return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`
 }
 
+// Map a filename's extension to a brand-tinted icon so a file card reads at a
+// glance (PDF red, Word blue, Excel green, PPT orange, archive amber, code
+// indigo). The colored tile uses the same hue as a soft wash + saturated glyph,
+// which stays clean in both light and dark themes (item: less-gray file cards).
+type FileKind = { icon: IconName; color: string }
+function fileKind(name: string): FileKind {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  const zipped = /\.(tar\.gz|tar\.bz2|tar\.xz)$/i.test(name)
+  if (zipped || ['zip', '7z', 'rar', 'tar', 'gz', 'tgz', 'bz2', 'xz'].includes(ext))
+    return { icon: 'fileZip', color: '#D08A2E' }
+  if (ext === 'pdf') return { icon: 'fileText', color: '#E5484D' }
+  if (['doc', 'docx', 'rtf'].includes(ext)) return { icon: 'fileDoc', color: '#2F6FE0' }
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return { icon: 'fileXls', color: '#2E9E5B' }
+  if (['ppt', 'pptx'].includes(ext)) return { icon: 'filePpt', color: '#E06C2F' }
+  if (['txt', 'md', 'log', 'ini', 'conf'].includes(ext))
+    return { icon: 'fileText', color: '#6B7A90' }
+  if (['js', 'ts', 'tsx', 'jsx', 'py', 'go', 'java', 'c', 'cpp', 'rs', 'rb', 'php', 'sh', 'json', 'xml', 'yml', 'yaml', 'html', 'css'].includes(ext))
+    return { icon: 'fileCode', color: '#5B6EE1' }
+  return { icon: 'file', color: '#7A8699' }
+}
+
+// Format unix-seconds voice/audio duration as m:ss for the QQ-style player.
+function fmtDur(sec: number): string {
+  if (!Number.isFinite(sec) || sec <= 0) return ''
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${m}:${s.toString().padStart(2, '0')}`
+}
+
 // ---- Inline media segments: render the real thing, never a [图片]/[语音] tag ----
 
-function ImageSeg({ url }: { url?: string }) {
+// A photo opens a floating lightbox on click (never a raw src navigation); the
+// overlay carries a download link that saves the same-origin bytes. A sticker
+// (大表情) renders small at natural size and is not zoomable, matching QQ.
+function ImageSeg({ url, sticker }: { url?: string; sticker?: boolean }) {
+  const [open, setOpen] = useState(false)
   if (!url) return null
   const src = api.groups.mediaUrl(url)
+  if (sticker) {
+    return <img src={src} alt="表情" loading="lazy" className="mt-1 max-h-24 max-w-[6rem] object-contain" />
+  }
   return (
-    <a href={src} target="_blank" rel="noopener noreferrer" className="mt-1 block w-fit">
-      <img
-        src={src}
-        alt="图片"
-        loading="lazy"
-        className="max-h-64 max-w-[16rem] rounded-lg border border-border object-cover"
-      />
-    </a>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 block w-fit overflow-hidden rounded-lg border border-border transition-opacity hover:opacity-90"
+      >
+        <img src={src} alt="图片" loading="lazy" className="max-h-64 max-w-[16rem] object-cover" />
+      </button>
+      <Modal.Backdrop isOpen={open} onOpenChange={setOpen} isDismissable>
+        <Modal.Container>
+          <Modal.Dialog className="max-w-[92vw] p-2 sm:max-w-3xl">
+            <Modal.CloseTrigger />
+            <Modal.Body className="flex flex-col items-center gap-3">
+              <img src={src} alt="图片" className="max-h-[78vh] w-auto rounded-md object-contain" />
+              <a
+                href={src}
+                download
+                className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/50"
+              >
+                <AppIcon name="download" className="size-4" />
+                下载原图
+              </a>
+            </Modal.Body>
+          </Modal.Dialog>
+        </Modal.Container>
+      </Modal.Backdrop>
+    </>
   )
 }
 
+// A minimal right-click menu: QQ surfaces voice actions on right-click, not a
+// chrome control bar. Rendered in a portal at the cursor and dismissed on any
+// outside click, scroll, resize, or Esc. Styled with theme tokens.
+function DownloadMenu({
+  at,
+  onClose,
+  href,
+  label,
+}: {
+  at: { x: number; y: number } | null
+  onClose: () => void
+  href: string
+  label: string
+}) {
+  useEffect(() => {
+    if (!at) return
+    const close = () => onClose()
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [at, onClose])
+  if (!at) return null
+  const x = Math.min(at.x, window.innerWidth - 168)
+  const y = Math.min(at.y, window.innerHeight - 56)
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50"
+      onClick={onClose}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onClose()
+      }}
+    >
+      <div
+        style={{ left: x, top: y }}
+        className="fixed min-w-36 rounded-lg border border-border bg-surface p-1 shadow-lg"
+      >
+        <a
+          href={href}
+          download
+          onClick={onClose}
+          className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted/60"
+        >
+          <AppIcon name="download" className="size-4 text-muted" />
+          {label}
+        </a>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+// QQ-style voice bubble: a play/pause control + progress track + duration, backed
+// by a hidden <audio> (custom player, no default browser control bar). The voice
+// route is the same-origin mp3 transcode. Right-click opens the download menu.
 function AudioSeg({ file, url }: { file?: string; url?: string }) {
-  // QQ voice is AMR/SILK — browsers can't decode it, and the CDN mislabels the
-  // bytes audio/mp3, so a raw <audio src> never loads. Prefer the same-origin
-  // transcode (backend get_record → real mp3); fall back to the proxied CDN only
-  // if we have no file id. The raw URL stays as a manual download link.
+  const ref = useRef<HTMLAudioElement | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const [dur, setDur] = useState(0)
+  const [cur, setCur] = useState(0)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const src = file ? api.groups.voiceUrl(file) : url ? api.groups.mediaUrl(url) : ''
   if (!src) return null
+  const toggle = () => {
+    const a = ref.current
+    if (!a) return
+    if (a.paused) {
+      void a.play()
+      setPlaying(true)
+    } else {
+      a.pause()
+      setPlaying(false)
+    }
+  }
+  const pct = dur > 0 ? Math.min(100, (cur / dur) * 100) : 0
   return (
-    <audio controls src={src} className="mt-1 h-10 w-full max-w-xs" preload="none">
-      {url ? (
-        <a href={api.groups.mediaUrl(url)} target="_blank" rel="noopener noreferrer">
-          下载语音
-        </a>
-      ) : null}
-    </audio>
+    <div
+      className="mt-1 w-fit"
+      onContextMenu={(e) => {
+        e.preventDefault()
+        setMenu({ x: e.clientX, y: e.clientY })
+      }}
+    >
+      <div className="flex items-center gap-2.5 rounded-2xl rounded-tl-md bg-surface px-3 py-2 shadow-sm">
+        <button
+          type="button"
+          onClick={toggle}
+          aria-label={playing ? '暂停' : '播放'}
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-accent transition-opacity hover:opacity-80"
+        >
+          <AppIcon name={playing ? 'pause' : 'play'} className="size-4" />
+        </button>
+        <div className="h-1 w-28 overflow-hidden rounded-full bg-muted">
+          <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+        </div>
+        <span className="min-w-[2.5rem] text-xs text-muted tabular-nums">{fmtDur(cur || dur)}</span>
+      </div>
+      <audio
+        ref={ref}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(e) => setDur(e.currentTarget.duration)}
+        onTimeUpdate={(e) => setCur(e.currentTarget.currentTime)}
+        onEnded={() => {
+          setPlaying(false)
+          setCur(0)
+        }}
+        className="hidden"
+      />
+      <DownloadMenu at={menu} onClose={() => setMenu(null)} href={src} label="下载语音" />
+    </div>
   )
 }
 
@@ -76,15 +236,17 @@ function VideoSeg({ url }: { url?: string }) {
   )
 }
 
-// A quoted original (reply target), resolved server-side.
+// A quoted original (reply target), resolved server-side. Lighter than the body
+// (muted, thin left rule, no fill) with the name and text on separate lines, so
+// it reads as context rather than competing with the message itself.
 function QuoteSeg({ reply }: { reply?: ReplyQuote }) {
   if (!reply) return null
   return (
-    <div className="mt-1 rounded-md border-l-2 border-accent/50 bg-muted/40 px-2 py-1 text-xs text-muted">
-      <span className="font-medium text-foreground/80">
+    <div className="mt-1 border-l-2 border-border pl-2.5">
+      <div className="text-xs font-medium text-muted">
         {reply.nickname || `用户 ${reply.userId}`}
-      </span>
-      <span className="ml-1 break-words">{reply.text}</span>
+      </div>
+      <div className="line-clamp-2 break-words text-xs text-muted/70">{reply.text}</div>
     </div>
   )
 }
@@ -128,7 +290,7 @@ function renderSegments(segs: MsgSegment[]): ReactNode[] {
         break
       case 'image':
         flush()
-        nodes.push(<ImageSeg key={i} url={s.url} />)
+        nodes.push(<ImageSeg key={i} url={s.url} sticker={s.sticker} />)
         break
       case 'record':
         flush()
@@ -178,17 +340,23 @@ function MessageBody({ m }: { m: HistoryMsg }) {
 // A single downloadable group file as a compact rectangular card. The href is a
 // same-origin proxy that resolves the short-lived NapCat link and re-serves it
 // with Content-Disposition, so the browser saves it under its real name+ext
-// (fixes the "下载" no-extension bug) — a plain navigation, cookie carried.
+// (fixes the "下载" no-extension bug) — a plain navigation, cookie carried. The
+// leading tile is tinted by file type (per-extension icon + brand hue) on a
+// clean surface card, so it reads at a glance without the old gray wash.
 function FileCard({ groupId, file }: { groupId: number; file: HistoryFile }) {
   const href = api.groups.fileDownloadUrl(groupId, file.fileId, file.name, file.busid)
+  const kind = fileKind(file.name)
   return (
     <a
       href={href}
       download={file.name}
-      className="group flex w-56 max-w-full items-start gap-2.5 rounded-xl border border-border bg-muted/40 p-3 transition-colors hover:bg-muted/70"
+      className="group flex w-56 max-w-full items-start gap-2.5 rounded-xl border border-border bg-surface p-3 shadow-sm transition-colors hover:bg-muted/40"
     >
-      <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-default text-muted">
-        <AppIcon name="file" className="size-4" />
+      <span
+        className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg"
+        style={{ backgroundColor: `${kind.color}1f`, color: kind.color }}
+      >
+        <AppIcon name={kind.icon} className="size-5" />
       </span>
       <span className="min-w-0 flex-1">
         <span className="line-clamp-2 break-all text-xs font-medium text-foreground">
@@ -208,32 +376,59 @@ function FileCard({ groupId, file }: { groupId: number; file: HistoryFile }) {
   )
 }
 
-// One message row: speaker avatar + 群内备注名 + 头衔 chips + timestamp, then the
-// structured body (inline media, @-names, quotes) and any file cards.
-function HistoryItem({ groupId, m }: { groupId: number; m: HistoryMsg }) {
+// A message whose whole body is image/sticker/video/voice (no text, no files)
+// renders bare — QQ shows such media without a chat-bubble background (and the
+// voice player already carries its own bubble, so a wrapper would double it).
+function isBareMedia(m: HistoryMsg): boolean {
+  const segs = m.segments
+  if (!segs || segs.length === 0) return false
+  if (m.files && m.files.length > 0) return false
+  return segs.every((s) => s.type === 'image' || s.type === 'video' || s.type === 'record')
+}
+
+// One QQ-style message: avatar + 群内备注名 + 头衔 chips + time above a chat
+// bubble (own messages align right on a soft-accent bubble). Consecutive
+// messages from the same speaker are grouped — avatar and header hidden — and
+// pure media/voice render bare, without a bubble. File cards sit below.
+function HistoryItem({ groupId, m, prev }: { groupId: number; m: HistoryMsg; prev?: HistoryMsg }) {
   const showRole = m.role === 'owner' || m.role === 'admin'
+  const grouped = !!prev && prev.userId === m.userId && m.time - prev.time < 300
+  const self = m.isSelf
+  const bare = isBareMedia(m)
+  const hasFiles = !!m.files && m.files.length > 0
+  const bodyEmpty = (!m.segments || m.segments.length === 0) && plainFallback(m.text) === ''
   return (
-    <li className="flex gap-3 py-3 first:pt-0 last:pb-0">
-      <Avatar size="sm" className="shrink-0">
-        <Avatar.Image src={userAvatar(m.userId)} alt={m.nickname || String(m.userId)} loading="lazy" />
-        <Avatar.Fallback>{(m.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium text-foreground">{m.nickname || m.userId}</span>
-          {showRole ? (
-            <IntentChip intent={roleIntent[m.role]}>{roleLabel[m.role]}</IntentChip>
-          ) : null}
-          {m.title ? <IntentChip intent="secondary">{m.title}</IntentChip> : null}
-          {m.isSelf ? <IntentChip intent="success">本账号</IntentChip> : null}
-          <span className="ml-auto shrink-0 text-xs text-muted tabular-nums">
-            {fmtDateTime(secToMs(m.time))}
-          </span>
-        </div>
-        <MessageBody m={m} />
-        {m.files && m.files.length > 0 ? (
+    <li className={`flex gap-2.5 first:mt-0 ${grouped ? 'mt-0.5' : 'mt-3'} ${self ? 'flex-row-reverse' : ''}`}>
+      {grouped ? (
+        <span className="w-8 shrink-0" aria-hidden />
+      ) : (
+        <Avatar size="sm" className="shrink-0">
+          <Avatar.Image src={userAvatar(m.userId)} alt={m.nickname || String(m.userId)} loading="lazy" />
+          <Avatar.Fallback>{(m.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
+        </Avatar>
+      )}
+      <div className={`flex min-w-0 max-w-[78%] flex-col ${self ? 'items-end' : 'items-start'}`}>
+        {grouped ? null : (
+          <div className={`mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 ${self ? 'flex-row-reverse' : ''}`}>
+            <span className="text-xs font-medium text-muted">{m.nickname || m.userId}</span>
+            {showRole ? <IntentChip intent={roleIntent[m.role]}>{roleLabel[m.role]}</IntentChip> : null}
+            {m.title ? <IntentChip intent="secondary">{m.title}</IntentChip> : null}
+            {self ? <IntentChip intent="success">本账号</IntentChip> : null}
+            <span className="text-xs tabular-nums text-muted/70">{fmtDateTime(secToMs(m.time))}</span>
+          </div>
+        )}
+        {bodyEmpty ? null : bare ? (
+          <MessageBody m={m} />
+        ) : (
+          <div
+            className={`w-fit rounded-2xl px-3 py-1.5 ${self ? 'rounded-tr-md bg-accent-soft' : 'rounded-tl-md bg-surface shadow-sm'}`}
+          >
+            <MessageBody m={m} />
+          </div>
+        )}
+        {hasFiles ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            {m.files.map((f) => (
+            {m.files!.map((f) => (
               <FileCard key={f.fileId} groupId={groupId} file={f} />
             ))}
           </div>
@@ -299,13 +494,15 @@ export default function GroupHistory() {
       try {
         const before = initial ? undefined : cursorRef.current
         const batch = await api.groups.history(gid, BATCH, before)
-        // Each batch is oldest-first; an older batch is globally older, so it
-        // prepends above what's shown. Dedupe by messageId across windows.
+        // Each batch is oldest-first (NapCat reverseOrder), so batch[0] is the
+        // oldest message and its messageSeq is the anchor for the next-older page.
+        // An older batch overlaps the previous anchor by one message; dedupe by
+        // messageId so that overlap (and any window overlap) collapses cleanly.
         const fresh = batch.filter((m) => !seenRef.current.has(m.messageId))
         fresh.forEach((m) => seenRef.current.add(m.messageId))
+        const oldestSeq = batch.length > 0 ? batch[0].messageSeq : 0
         if (fresh.length > 0) {
-          const seqs = batch.map((m) => m.messageSeq).filter((s) => s > 0)
-          if (seqs.length > 0) cursorRef.current = Math.min(...seqs)
+          if (oldestSeq > 0) cursorRef.current = oldestSeq
           if (initial) {
             scrollAction.current = 'bottom'
             setMsgs(fresh)
@@ -316,7 +513,10 @@ export default function GroupHistory() {
             setMsgs((prev) => [...fresh, ...prev])
           }
         }
-        const more = batch.length >= BATCH && fresh.length > 0 && cursorRef.current > 0
+        // Keep paging while older messages keep arriving and we still hold a valid
+        // backward anchor. At the earliest retained message the anchor returns only
+        // itself (all dupes) → fresh 0 → stop, showing "没有更早的消息了".
+        const more = fresh.length > 0 && oldestSeq > 0
         hasMoreRef.current = more
         setHasMore(more)
         setPhase('ready')
@@ -400,7 +600,10 @@ export default function GroupHistory() {
         ) : msgs.length === 0 ? (
           <EmptyState icon="logs" title="暂无历史消息" description="该群最近没有可显示的消息" />
         ) : (
-          <div ref={scrollRef} className="max-h-[68vh] overflow-y-auto pr-1">
+          <div
+            ref={scrollRef}
+            className="max-h-[68vh] overflow-y-auto rounded-xl bg-background p-3 sm:px-4"
+          >
             <div ref={topRef} className="flex justify-center py-3">
               {loadingMore ? (
                 <Spinner size="sm" color="accent" />
@@ -410,9 +613,9 @@ export default function GroupHistory() {
                 <span className="text-xs text-muted">没有更早的消息了</span>
               )}
             </div>
-            <ul className="divide-y divide-border">
-              {msgs.map((m) => (
-                <HistoryItem key={m.messageId} groupId={gid} m={m} />
+            <ul className="pb-1">
+              {msgs.map((m, i) => (
+                <HistoryItem key={m.messageId} groupId={gid} m={m} prev={msgs[i - 1]} />
               ))}
             </ul>
           </div>

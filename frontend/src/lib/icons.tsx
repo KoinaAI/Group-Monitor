@@ -62,7 +62,14 @@ export const ICONS = {
   tag: 'tag',
   more: 'ellipsis',
   file: 'file',
+  fileText: 'file-text',
+  fileDoc: 'file-letter-w',
+  fileXls: 'file-letter-x',
+  filePpt: 'file-letter-p',
+  fileZip: 'file-zipper',
+  fileCode: 'file-code',
   download: 'file-arrow-down',
+  play: 'play-fill',
   back: 'arrow-left',
 
   // Theme switcher.
