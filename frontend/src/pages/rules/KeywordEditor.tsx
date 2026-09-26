@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Input, TextField } from '@heroui/react'
+import { Button, Input, Tag, TagGroup, TextField } from '@heroui/react'
 import { AppIcon } from '../../lib/icons'
 
 // Tag-style editor for the urgent-keyword list. Enter or the add button appends;
@@ -42,24 +42,18 @@ export function KeywordEditor({
         </Button>
       </div>
       {value.length ? (
-        <div className="flex flex-wrap gap-2">
-          {value.map((k) => (
-            <span
-              key={k}
-              className="inline-flex items-center gap-1 rounded-md bg-default py-1 pl-2.5 pr-1 text-sm text-foreground"
-            >
-              {k}
-              <button
-                type="button"
-                aria-label={`移除 ${k}`}
-                onClick={() => onChange(value.filter((x) => x !== k))}
-                className="grid size-5 place-items-center rounded text-muted hover:bg-default hover:text-foreground"
-              >
-                <AppIcon name="close" className="size-3.5" />
-              </button>
-            </span>
-          ))}
-        </div>
+        <TagGroup
+          aria-label="紧急关键词"
+          onRemove={(keys) => onChange(value.filter((k) => !keys.has(k)))}
+        >
+          <TagGroup.List>
+            {value.map((k) => (
+              <Tag key={k} id={k} textValue={k}>
+                {k}
+              </Tag>
+            ))}
+          </TagGroup.List>
+        </TagGroup>
       ) : (
         <p className="text-xs text-muted">未设置关键词，命中即判定为紧急并绕过静默窗口。</p>
       )}

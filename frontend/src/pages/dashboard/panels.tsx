@@ -103,7 +103,7 @@ export function EscalationPanel() {
       ) : (
         <ul className="flex flex-col gap-3">
           {escalations.slice(0, 6).map((e) => (
-            <li key={e.ts} className="rounded-lg border border-border p-3">
+            <li key={e.ts} className="rounded-lg bg-surface-secondary p-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-sm font-medium text-foreground">
                   {e.title || e.event || '升级事件'}

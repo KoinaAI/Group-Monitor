@@ -117,7 +117,7 @@ export function LLMForm({ initial }: { initial: LLMConfig }) {
           />
         </div>
         {res ? (
-          <div className="rounded-lg border border-border bg-surface-secondary p-3">
+          <div className="rounded-lg bg-surface-secondary p-3">
             {!res.ok ? (
               <p className="text-xs text-danger">{res.error || '测试失败'}</p>
             ) : (

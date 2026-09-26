@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Segment } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
 import { SectionCard } from '../components/ui/SectionCard'
@@ -7,7 +8,6 @@ import { IntentChip } from '../components/ui/IntentChip'
 import { useLive } from '../lib/store'
 import { logLevelIntent, logLevelLabel } from '../lib/labels'
 import { fmtDateTime } from '../lib/time'
-import { cn } from '../lib/cn'
 import type { LogLevel } from '../lib/types'
 
 const FILTERS: { key: LogLevel | 'all'; label: string }[] = [
@@ -36,23 +36,19 @@ export default function Logs() {
         description={`共 ${logs.length} 条`}
         contentClassName="max-h-[36rem] overflow-y-auto"
         actions={
-          <div className="flex flex-wrap justify-end gap-1">
+          <Segment
+            aria-label="日志级别筛选"
+            variant="ghost"
+            size="sm"
+            selectedKey={filter}
+            onSelectionChange={(key) => setFilter(key as LogLevel | 'all')}
+          >
             {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => setFilter(f.key)}
-                className={cn(
-                  'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-                  filter === f.key
-                    ? 'bg-accent-soft text-accent'
-                    : 'text-muted hover:text-foreground',
-                )}
-              >
+              <Segment.Item key={f.key} id={f.key}>
                 {f.label}
-              </button>
+              </Segment.Item>
             ))}
-          </div>
+          </Segment>
         }
       >
         {rows.length === 0 ? (

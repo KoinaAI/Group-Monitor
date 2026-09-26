@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Alert, Button, Card } from '@heroui/react'
+import { Segment } from '@heroui-pro/react'
 import { api } from '../lib/api'
 import type { AuthStatus } from '../lib/types'
 import { AppIcon } from '../lib/icons'
-import { cn } from '../lib/cn'
 import { Loader } from '../components/Loader'
 import { StatusDot } from '../components/ui/StatusDot'
 import { OtpPanel } from './login/OtpPanel'
@@ -72,22 +72,15 @@ export default function Login() {
       }
     >
       {both ? (
-        <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-default p-1">
-          {(['otp', 'password'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                mode === m
-                  ? 'bg-surface text-foreground shadow-sm'
-                  : 'text-muted hover:text-foreground',
-              )}
-            >
-              {m === 'otp' ? '验证码登录' : '管理密码'}
-            </button>
-          ))}
+        <div className="mb-5 flex justify-center">
+          <Segment
+            aria-label="登录方式"
+            selectedKey={mode}
+            onSelectionChange={(key) => setMode(key as 'otp' | 'password')}
+          >
+            <Segment.Item id="otp">验证码登录</Segment.Item>
+            <Segment.Item id="password">管理密码</Segment.Item>
+          </Segment>
         </div>
       ) : null}
 

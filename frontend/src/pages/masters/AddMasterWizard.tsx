@@ -196,7 +196,7 @@ export function AddMasterWizard({
         </div>
       ) : phase === 'review' ? (
         <>
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3">
+          <div className="flex items-center gap-3 rounded-xl bg-surface-secondary p-3">
             <Avatar size="lg" className="shrink-0">
               <Avatar.Image src={userAvatar(candidate.userId)} alt={candidate.nickname} loading="lazy" />
               <Avatar.Fallback>{(candidate.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
@@ -236,7 +236,7 @@ export function AddMasterWizard({
         </>
       ) : (
         <>
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3">
+          <div className="flex items-center gap-3 rounded-xl bg-surface-secondary p-3">
             <Avatar size="md" className="shrink-0">
               <Avatar.Image src={userAvatar(candidate.userId)} alt={candidate.nickname} loading="lazy" />
               <Avatar.Fallback>{(candidate.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
