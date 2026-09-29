@@ -119,10 +119,10 @@ function Shell({ children, footer }: { children: ReactNode; footer?: ReactNode }
       />
       <div className="relative w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <img src="/sentinel.svg" alt="" className="size-12" />
+          <img src="/brand-mark.svg" alt="" className="size-12" />
           <div>
-            <h1 className="text-lg font-semibold text-foreground">群哨</h1>
-            <p className="text-sm text-muted">QQ 群通知助手</p>
+            <h1 className="text-lg font-semibold text-foreground">讯枢</h1>
+            <p className="text-sm text-muted">消息通知与归档</p>
           </div>
         </div>
         <Card variant="default">{children}</Card>

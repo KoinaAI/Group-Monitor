@@ -21,13 +21,13 @@ import { connectLiveStream, useLive } from '../lib/store'
 function Brand() {
   return (
     <div className="flex items-center gap-2.5 px-1.5 py-1">
-      <img src="/sentinel.svg" alt="" className="size-7 shrink-0" />
+      <img src="/brand-mark.svg" alt="" className="size-7 shrink-0" />
       <div
         className="min-w-0 leading-tight group-data-[state=collapsed]:hidden"
         data-sidebar="label"
       >
-        <p className="truncate text-sm font-semibold text-foreground">群哨</p>
-        <p className="truncate text-xs text-muted">QQ 群通知助手</p>
+        <p className="truncate text-sm font-semibold text-foreground">讯枢</p>
+        <p className="truncate text-xs text-muted">消息通知与归档</p>
       </div>
     </div>
   )
@@ -130,7 +130,7 @@ function SidebarInner() {
 // Top bar: mobile menu toggle + desktop collapse trigger + page title.
 function TopNav() {
   const { pathname } = useLocation()
-  const title = NAV_TITLE[pathname] ?? '群哨'
+  const title = NAV_TITLE[pathname] ?? '讯枢'
   return (
     <Navbar maxWidth="full">
       <Navbar.Header>

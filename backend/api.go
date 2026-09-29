@@ -744,7 +744,7 @@ func (a *API) handleTestNotify(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "尚未配置主人")
 		return
 	}
-	text := "✅ 测试提醒\n──────────\n这是一条来自 QQ 群哨的测试消息，说明推送通道已打通。"
+	text := "✅ 测试提醒\n──────────\n这是一条来自讯枢的测试消息，说明通知推送通道已打通。"
 	sent, failed := sendPrivateConcurrent(a.ob, cfg.Masters, text)
 	fails := make([]string, 0, len(failed))
 	for _, id := range failed {

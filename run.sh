@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 群哨 — build and run the backend.
+# 讯枢 — build and run the backend.
 set -euo pipefail
 cd "$(dirname "$0")"
 

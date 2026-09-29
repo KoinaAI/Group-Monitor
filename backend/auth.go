@@ -123,7 +123,7 @@ func (a *API) handleOtpRequest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "生成验证码失败")
 		return
 	}
-	text := fmt.Sprintf("【群哨】本次登录验证码：%s\n5 分钟内有效，仅可使用一次。若非本人操作，请忽略本条消息。", code)
+	text := fmt.Sprintf("【讯枢】本次登录验证码：%s\n5 分钟内有效，仅可使用一次。若非本人操作，请忽略本条消息。", code)
 
 	sent, failed := 0, []string{}
 	for _, m := range masters {
@@ -370,7 +370,7 @@ func (a *API) handleMasterVerifyRequest(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, 500, "生成验证码失败")
 		return
 	}
-	text := fmt.Sprintf("【群哨】有人正将你的 QQ 绑定为主人，验证码：%s\n3 分钟内有效，仅可使用一次。若非本人操作，请忽略本条消息。", code)
+	text := fmt.Sprintf("【讯枢】有人正将你的 QQ 绑定为主人，验证码：%s\n3 分钟内有效，仅可使用一次。若非本人操作，请忽略本条消息。", code)
 	if err := a.ob.SendPrivateMsg(body.UserID, text); err != nil {
 		writeErr(w, 502, "验证码发送失败，请确认该 QQ 可私聊")
 		return

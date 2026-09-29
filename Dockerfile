@@ -27,6 +27,8 @@ FROM nginx:1.27-alpine
 
 RUN apk add --no-cache ca-certificates
 LABEL org.opencontainers.image.source="https://github.com/KoinaAI/Group-Monitor"
+LABEL org.opencontainers.image.title="讯枢"
+LABEL org.opencontainers.image.description="面向群聊与协作平台的智能消息通知与归档工具"
 COPY --from=frontend-build /src/frontend/dist/ /usr/share/nginx/html/
 COPY --from=backend-build /out/napnotifier /usr/local/bin/napnotifier
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf

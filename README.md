@@ -1,105 +1,110 @@
-# 群哨 · NapCat QQ Notifier
+# 讯枢
 
-安静地看着群聊，只在**值得**的时候出声。
+面向群聊与协作平台的智能消息通知工具，聚焦消息筛选、分级提醒与通知归档。当前版本通过 NapCat / OneBot v11 接入 QQ 群聊，架构支持后续扩展更多消息渠道。
 
-监听指定 QQ 群，对目标外的群完全无反应；对目标群提取发送者与身份、按空窗除抖打包、区分发送者与消息等级、接入 LLM 提炼过滤，最后把真正有用的信息（含时间/地点/事件）私聊推送给「主人」。
+## 支持渠道
 
-- **后端**：纯 Go，轻量、单二进制，仅依赖 `gorilla/websocket`。
-- **前端**：`frontend/` 提供 React 控制台，开发时通过 Vite 将 `/api` 代理到后端。
+| 渠道 | 状态 | 当前接入方式 |
+|---|---|---|
+| QQ 群聊 | 已支持 | NapCat / OneBot v11 |
+|  |  |  |
+|  |  |  |
 
-> 🔐 **鉴权**：登录与会话由后端处理。除 `/api/auth/*` 外，所有 `/api/*` 与 SSE 接口都需要有效会话。登录方式：
-> 1. **验证码（OTP）**：向所有「主人」私聊下发 6 位一次性验证码（5 分钟有效、限流），校验通过即签发会话 Cookie。
-> 2. **应急密码**：仅在 OTP 无法下发（NapCat 离线或未配置主人）时可用，经 `NAP_PASSWORD` 配置；连续错误会临时锁定。
->
-> 会话为内存态（重启即全部登出），Cookie 为 `HttpOnly` + `SameSite=Lax`，仅在 HTTPS 下带 `Secure`。`NAP_ADDR` 默认仍只绑 `127.0.0.1`；若要对外，请在前面加一层 TLS 反代，使会话 Cookie 能以 `Secure` 下发。
+空白行预留给后续接入渠道；新增支持后会补充接入方式和部署要求。
 
-## 架构
+## 功能
 
-```
-NapCat (OneBot v11)
-   │  ws://…:3101  事件           http://…:3100  发送/查询
-   ▼
-┌──────────────── 后端 Go (:8787) ────────────────┐
-│  onebot  ▸ 收事件 / 调 API                        │
-│  pipeline▸ 过滤群 → 分级 → 除抖(2min) → LLM → 推送 │
-│  llm     ▸ OpenAI 兼容，提炼为结构化 JSON          │
-│  api+hub ▸ REST + SSE，配置持久化到 config.json    │
-└───────────────────────────────────────────────┘
-```
+- 按群过滤消息，识别群主、管理员、重点人物、@全体成员和紧急关键词。
+- 默认静默 2 分钟后处理普通消息；持续活跃的群最多等待 10 分钟，紧急消息立即处理。
+- 当前通过 QQ 私聊验证码登录；NapCat 离线或没有可用主人时，可选用应急密码登录。
+- 实时通知、通知归档、关键词检索和 LLM 历史查询。
+- 可选接入 Jev 做消息筛选、LLM 做内容提炼、MinerU 解析文档，以及 Cloudflare R2 / S3 备份通知归档。
 
-## 处理流程（对应需求）
+## Docker 部署
 
-1. **群过滤**：只处理「群聊监听」中勾选的群，其余群消息不产生任何反应。
-2. **提取信息**：谁发的、群名片/昵称、身份（群主 / 管理员 / 成员），是否 @全体成员、是否 @主人。
-3. **除抖打包**：普通消息进入该群缓冲区，群内静默满 `空窗时长`（默认 120s）后统一打包处理；期间每来一条新消息就重置计时。**紧急消息**（命中关键词 / @全体成员 / @主人）立即打包、跳过空窗。持续刷屏的群由 `最长等待` 兜底强制处理。
-4. **分级**：
-   - 发送者等级：群主 > 管理员 > 成员；可为特定 QQ 指定「重点人物 / 普通 / 屏蔽」。
-   - 消息等级：一般 / 重要 / 紧急，群主管理员或重点人物参与时自动抬升。
-5. **LLM 提炼**：把整批消息交给大模型，判定是否「有用」并输出 `{useful, level, title, summary, time, place, event}`；无用则过滤不打扰。有用则按等级私聊推送给达到接收门槛的主人。
-
-> 未启用 LLM 时：仅紧急消息以原文摘要直推，普通消息只缓冲不推送，避免打扰。
-
-## 运行
-
-前置：本机已运行并登录 NapCat（OneBot v11），Go ≥ 1.22。
+当前发布镜像支持 NapCat / OneBot v11，需要一台能访问其 HTTP 和 WebSocket 接口的 Docker 主机。[GHCR 镜像](https://github.com/orgs/KoinaAI/packages/container/package/group-monitor)公开可拉取；将 `VERSION` 替换为[GitHub Release](https://github.com/KoinaAI/Group-Monitor/releases)使用的 tag。
 
 ```bash
-./run.sh
+VERSION=v1.0.0
+
+docker run -d \
+  --name group-monitor \
+  --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 \
+  -v group-monitor-data:/data \
+  -e NAP_PASSWORD='replace-with-a-strong-password' \
+  "ghcr.io/koinaai/group-monitor:${VERSION}"
 ```
 
-后端监听 http://127.0.0.1:8787 （REST + SSE，鉴权见上文「鉴权」）。
-配置通过 `config.json` 持久化；`api` 段的接口需携带登录会话 Cookie 调用。
+打开 <http://127.0.0.1:8080>。数据卷 `/data` 保存配置和正式通知归档，容器更新或重建时请保留该卷。
+
+### 首次配置
+
+1. 首次启动建议设置 `NAP_PASSWORD`。尚未配置主人或 NapCat 不可用时，可用它登录控制台。
+2. 当前版本在「连接」中填写从应用容器可访问的 NapCat OneBot HTTP 地址、WebSocket 地址和访问令牌，并确认连接成功。
+3. 在「主人」中绑定至少一个完整权限的主人账号。验证码会由 NapCat 私聊发送给待绑定账号；通知型账号不能用于控制台验证码登录。
+4. 在「群聊」中选择要监听的群，再按需要配置规则、Jev 和 LLM。
+
+当验证码登录可用时，应急密码登录会关闭；应急密码仅在没有主人、NapCat 离线或验证码无法送达时启用。请妥善保管密码和 OneBot 令牌。
+
+Docker 示例只把端口绑定到宿主机回环地址。若要从公网访问，请放在 HTTPS 反向代理后，并限制可访问来源。服务重启后，所有登录会话都会失效。
 
 ### 环境变量
 
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| `NAP_ADDR` | `127.0.0.1:8787` | 后端监听地址（对外需自备 TLS 反代） |
-| `NAP_CONFIG` | `./config.json` | 配置文件路径（自动创建） |
-| `NAP_PASSWORD` | 空 | 应急密码；仅当 OTP 无法下发时可用，空则禁用 |
-| `NAP_SESSION_HOURS` | `12` | 会话有效期（小时） |
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `NAP_ADDR` | `127.0.0.1:8787` | Go 后端监听地址；Docker 镜像内由 Nginx 反代，通常无需修改 |
+| `NAP_CONFIG` | `config.json` | 配置文件路径；Docker 镜像使用 `/data/config.json` |
+| `NAP_NOTICE_DIR` | 配置文件同目录下的 `notices/` | 通知归档目录；Docker 默认 `/data/notices` |
+| `NAP_PASSWORD` | 未设置 | 应急登录密码；OTP 可用时不接受密码登录 |
+| `NAP_SESSION_HOURS` | `12` | 会话有效时长，单位为小时 |
 
-## 连接 NapCat
+### 通知归档、文件与备份
 
-默认已按本机探测填好：OneBot HTTP `http://172.17.0.2:3100`、WS `ws://172.17.0.2:3101`、token `agn-onebot-token-2026`。
-若容器重建导致桥接 IP 变化，在配置里改 `onebot` 段即可（后端支持热重连）。
+正式通知按日保存为 JSONL。默认保留 90 天，归档总量上限为 256 MiB；不会保存完整群聊、附件二进制或临时下载链接。开启归档需要在「智能」中配置有效的 Jev API Key；没有可用 Jev 时，实时通知仍可继续，但不会写入正式通知归档。启用 Jev 或 LLM 会把相关消息文本发送到你配置的服务；启用 MinerU 时，受支持的附件会上传至 MinerU 解析。
 
-## 测试
+附件阅读默认关闭。TXT、Markdown 和 DOCX 在本地解析；PDF、DOC、PPT、XLS 等格式通过 [MinerU v4 API](https://mineru.net/apiManage/docs) 处理，需要配置其 API Key。默认单文件上限为 20 MiB，每条消息最多读取 3 个附件，原始文件不会写入归档。
 
-```bash
-cd backend && go test ./...
-```
+云端备份默认关闭，可选 Cloudflare R2 或其他 S3 兼容存储；启用后只上传完整的通知归档分片，不包含配置和密钥。默认计划为每天 03:00；容器通常使用 UTC，可在计划表达式中指定 `CRON_TZ=Asia/Shanghai`。
 
-覆盖：发送者分级、紧急判定、群过滤与除抖、Jev/LLM 响应、OneBot 消息解析与历史、配置持久化、REST/SSE、OTP 登录与主人绑定、会话和应急密码。
+## 从源码运行
 
-每次 push 和 pull request 都会触发 GitHub Actions 的 Backend CI：检查 `gofmt`、运行 `go vet ./...`、`go test -race -coverprofile=coverage.out ./...` 并输出覆盖率摘要。
-
-## Docker / GHCR
-
-镜像包含 Nginx 前端和 Go 后端，容器端口 `8080` 提供控制台、REST 与 SSE；配置文件保存在 `/data/config.json`。
+需要 Go 1.22+、Node.js 22+，以及当前支持的 NapCat / OneBot v11 接口。后端与前端分别在两个终端启动：
 
 ```bash
-docker run --name group-monitor \
-  -p 8787:8080 \
-  -v group-monitor-data:/data \
-  -e NAP_PASSWORD='your-break-glass-password' \
-  ghcr.io/koinaai/group-monitor:latest
+# 终端一：在仓库根目录启动后端，默认监听 127.0.0.1:8787
+./run.sh
 ```
-
-构建并推送镜像需要先登录 GHCR：
 
 ```bash
-echo "$CR_PAT" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
-export HEROUI_KEY='your-private-heroui-key'
-docker buildx build --platform linux/amd64 \
-  -t ghcr.io/koinaai/group-monitor:latest \
-  -t ghcr.io/koinaai/group-monitor:$(git rev-parse --short HEAD) \
-  --secret id=heroui_key,env=HEROUI_KEY \
-  --push .
+# 终端二：安装并授权 HeroUI Pro，再启动前端
+cd frontend
+npm ci
+HEROUI_KEY='your-HeroUI-key' npx -y hpsetup@latest react --auto
+npm run dev
 ```
 
-`HEROUI_KEY` 仅作为 BuildKit secret 使用，不会写入镜像或 Git；构建机需要先用 `hpsetup` 授权 HeroUI Pro。
+前端开发服务器默认在 <http://localhost:5173>，并将 `/api` 代理到本机 Go 后端。`HEROUI_KEY` 只用于获取授权的 Pro 组件，不要提交到 Git。
 
-推送到 `master` 会触发 `.github/workflows/docker-publish.yml`，使用仓库的 `GITHUB_TOKEN` 自动发布 `latest` 和提交短 SHA 标签；Actions secret 需要配置为 `HEROUI_KEY`。
+## 检查与发布
 
-容器内后端仍通过 `NAP_ADDR`、`NAP_CONFIG`、`NAP_PASSWORD` 和 `NAP_SESSION_HOURS` 配置；部署到公网时请在外层提供 TLS。
+后端检查：
+
+```bash
+cd backend
+test -z "$(gofmt -l .)"
+go vet ./...
+go test -race -coverprofile=coverage.out ./...
+```
+
+前端检查：
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+GitHub Actions 会在 push 和 pull request 时分别运行 [Backend CI](.github/workflows/backend-ci.yml) 与 [Frontend CI](.github/workflows/frontend-ci.yml)。前端 CI 使用仓库 Actions secret `HEROUI_KEY` 获取 Pro 组件。
+
+发布 GitHub Release 后，Docker 发布 workflow 会构建 `linux/amd64` 镜像并推送到 GHCR，镜像 tag 与 Release tag 相同。也可以在 Actions 页面手动运行 [Docker 发布 workflow](.github/workflows/docker-publish.yml)。普通 push 不会发布 Docker 镜像。

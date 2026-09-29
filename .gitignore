@@ -2,6 +2,7 @@
 backend/napnotifier
 config.json
 config.json.tmp
+notices/
 # frontend
 frontend/node_modules/
 # misc

@@ -129,7 +129,7 @@ async function mockApi(page) {
     if (p === '/auth/status')
       return json({ authed: true, otpAvailable: true, passwordConfigured: false, passwordAvailable: false, onebotConnected: true, masters: 1 })
     if (p === '/status')
-      return json({ onebotConnected: true, selfId: 10086, account: { user_id: 10086, nickname: '群哨机器人' }, enabled: true, llmEnabled: true, jevEnabled: true, watchedGroups: 2, totalGroups: 3, masters: 1, quietWindowSec: 120, serverTime: Date.now() })
+      return json({ onebotConnected: true, selfId: 10086, account: { user_id: 10086, nickname: '测试机器人' }, enabled: true, llmEnabled: true, jevEnabled: true, watchedGroups: 2, totalGroups: 3, masters: 1, quietWindowSec: 120, serverTime: Date.now() })
     if (p === '/config')
       return json({ onebot: { httpBase: '', wsUrl: '', token: '' }, llm: { enabled: true, baseUrl: '', apiKey: '', model: 'gpt', timeoutSec: 30, maxTokens: 800, temperature: 0.2 }, jev: { enabled: true, baseUrl: '', apiKey: '', model: '', threshold: 0.6, contextN: 5, timeoutSec: 20 }, masters: [], groups: GROUPS, rules: { quietWindowSec: 120, maxHoldSec: 600, urgentKeywords: [], atAllUrgent: true, elevateOwnerAdmin: true, senderOverrides: [] }, enabled: true })
     if (p === '/groups') return json(GROUPS)

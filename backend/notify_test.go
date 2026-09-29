@@ -66,7 +66,7 @@ func TestFormatReminderIsCompactAndOmitsEmptyFields(t *testing.T) {
 	if got != want {
 		t.Fatalf("compact reminder mismatch:\n%s", got)
 	}
-	if strings.Contains(got, "截止") || strings.Contains(got, "群哨提醒") || strings.Contains(got, "━━") {
+	if strings.Contains(got, "截止") || strings.Contains(got, "讯枢提醒") || strings.Contains(got, "━━") {
 		t.Fatalf("empty/ornamental fields leaked: %s", got)
 	}
 }
