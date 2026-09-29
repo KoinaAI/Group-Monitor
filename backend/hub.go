@@ -8,6 +8,7 @@ import (
 
 // Event is a server-sent event pushed to connected frontends.
 type Event struct {
+	ID   uint64 `json:"id,omitempty"`
 	Type string `json:"type"` // status | message | buffer | escalation | log
 	Data any    `json:"data"`
 	TS   int64  `json:"ts"`
@@ -16,8 +17,11 @@ type Event struct {
 // Hub fans out events to all connected SSE clients and keeps a bounded history
 // of recent activity so a freshly-loaded page has context.
 type Hub struct {
-	mu      sync.RWMutex
-	clients map[chan Event]struct{}
+	mu        sync.Mutex
+	clients   map[chan Event]struct{}
+	events    []Event
+	nextID    uint64
+	maxEvents int
 
 	logMu   sync.RWMutex
 	logs    []LogEntry
@@ -38,18 +42,30 @@ type LogEntry struct {
 
 func NewHub() *Hub {
 	return &Hub{
-		clients: make(map[chan Event]struct{}),
-		maxLogs: 200,
-		maxEscs: 30,
+		clients:   make(map[chan Event]struct{}),
+		maxEvents: 256,
+		maxLogs:   200,
+		maxEscs:   30,
 	}
 }
 
 func (h *Hub) Subscribe() chan Event {
-	ch := make(chan Event, 32)
+	ch, _ := h.SubscribeSince(0)
+	return ch
+}
+
+func (h *Hub) SubscribeSince(lastID uint64) (chan Event, []Event) {
+	ch := make(chan Event, 64)
 	h.mu.Lock()
 	h.clients[ch] = struct{}{}
+	replay := make([]Event, 0)
+	for _, ev := range h.events {
+		if ev.ID > lastID {
+			replay = append(replay, ev)
+		}
+	}
 	h.mu.Unlock()
-	return ch
+	return ch, replay
 }
 
 func (h *Hub) Unsubscribe(ch chan Event) {
@@ -62,15 +78,26 @@ func (h *Hub) Unsubscribe(ch chan Event) {
 }
 
 func (h *Hub) Broadcast(typ string, data any) {
-	ev := Event{Type: typ, Data: data, TS: time.Now().UnixMilli()}
-	h.mu.RLock()
+	h.mu.Lock()
+	h.nextID++
+	ev := Event{ID: h.nextID, Type: typ, Data: data, TS: time.Now().UnixMilli()}
+	h.events = append(h.events, ev)
+	if len(h.events) > h.maxEvents {
+		h.events = h.events[len(h.events)-h.maxEvents:]
+	}
+	var slow []chan Event
 	for ch := range h.clients {
 		select {
 		case ch <- ev:
-		default: // drop for slow clients rather than block the pipeline
+		default:
+			slow = append(slow, ch)
 		}
 	}
-	h.mu.RUnlock()
+	for _, ch := range slow {
+		delete(h.clients, ch)
+		close(ch)
+	}
+	h.mu.Unlock()
 }
 
 // Log records an activity entry and broadcasts it.
@@ -122,6 +149,10 @@ func (h *Hub) RecentEscalations() []any {
 }
 
 func (e Event) Encode() []byte {
-	b, _ := json.Marshal(e)
+	b, _ := e.EncodeChecked()
 	return b
+}
+
+func (e Event) EncodeChecked() ([]byte, error) {
+	return json.Marshal(e)
 }

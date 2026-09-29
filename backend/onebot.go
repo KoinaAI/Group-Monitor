@@ -76,6 +76,17 @@ func NewOneBot() *OneBot {
 func (o *OneBot) Connected() bool { return o.connected.Load() }
 func (o *OneBot) SelfID() int64   { return o.selfID.Load() }
 
+func (o *OneBot) Shutdown() {
+	o.genMu.Lock()
+	if o.cancel != nil {
+		o.cancel()
+		o.cancel = nil
+	}
+	o.gen++
+	o.connected.Store(false)
+	o.genMu.Unlock()
+}
+
 // Reconfigure points the client at (possibly new) endpoints and restarts the
 // WebSocket loop.
 func (o *OneBot) Reconfigure(c OneBotConfig) {
@@ -437,8 +448,12 @@ type LoginInfo struct {
 }
 
 func (o *OneBot) GetLoginInfo() (LoginInfo, error) {
+	return o.GetLoginInfoContext(context.Background())
+}
+
+func (o *OneBot) GetLoginInfoContext(ctx context.Context) (LoginInfo, error) {
 	var li LoginInfo
-	data, err := o.call("get_login_info", map[string]any{})
+	data, err := o.callContext(ctx, "get_login_info", map[string]any{})
 	if err != nil {
 		return li, err
 	}
@@ -474,7 +489,11 @@ func (o *OneBot) GetStrangerInfo(userID int64) (StrangerInfo, error) {
 }
 
 func (o *OneBot) SendPrivateMsg(userID int64, text string) error {
-	_, err := o.call("send_private_msg", map[string]any{
+	return o.SendPrivateMsgContext(context.Background(), userID, text)
+}
+
+func (o *OneBot) SendPrivateMsgContext(ctx context.Context, userID int64, text string) error {
+	_, err := o.callContext(ctx, "send_private_msg", map[string]any{
 		"user_id": userID,
 		"message": text,
 	})

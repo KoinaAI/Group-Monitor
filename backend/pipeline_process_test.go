@@ -25,7 +25,11 @@ func TestPipelineLLMVerdictAndMasterThreshold(t *testing.T) {
 	sc := classify(&cfg, msg(100, 7, "owner", "明日开会"))
 	pipe.process(cfg, 100, "班群", []scored{sc}, false)
 	sent := f.sent()
-	if len(sent) != 2 || sent[0].userID != 1 || sent[1].userID != 2 || !strings.Contains(sent[0].text, "开会") {
+	recipients := map[int64]bool{}
+	for _, item := range sent {
+		recipients[item.userID] = strings.Contains(item.text, "开会")
+	}
+	if len(sent) != 2 || !recipients[1] || !recipients[2] || recipients[3] {
 		t.Fatalf("owner notice recipients=%+v", sent)
 	}
 	escs := pipe.hub.RecentEscalations()

@@ -26,15 +26,29 @@ func TestHubBroadcastAndBoundedHistory(t *testing.T) {
 	if len(escs) != 30 || escs[0] != 34 || escs[29] != 5 {
 		t.Fatalf("bounded escalations=%v", escs)
 	}
-	// A client that does not read beyond its channel capacity must not block
-	// the producer or the rest of the system.
-	if len(ch) != cap(ch) {
-		t.Fatalf("slow client buffer=%d want %d", len(ch), cap(ch))
+	// A client that does not read is disconnected instead of silently losing an
+	// unbounded stream of events.
+	for range ch {
 	}
 	h.Unsubscribe(ch)
 	h.Unsubscribe(ch) // repeated teardown is safe
 	var decoded Event
 	if err := json.Unmarshal((Event{Type: "hello", Data: 1, TS: 2}).Encode(), &decoded); err != nil || decoded.Type != "hello" || decoded.TS != 2 {
 		t.Fatalf("event encoding: %+v %v", decoded, err)
+	}
+}
+
+func TestHubReplaySinceID(t *testing.T) {
+	h := NewHub()
+	h.Broadcast("first", 1)
+	h.Broadcast("second", 2)
+	ch, replay := h.SubscribeSince(1)
+	defer h.Unsubscribe(ch)
+	if len(replay) != 1 || replay[0].ID != 2 || replay[0].Type != "second" {
+		t.Fatalf("replay=%+v", replay)
+	}
+	h.Broadcast("third", 3)
+	if ev := <-ch; ev.ID != 3 {
+		t.Fatalf("live event=%+v", ev)
 	}
 }

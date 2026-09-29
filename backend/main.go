@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -24,11 +28,15 @@ func main() {
 	hub := NewHub()
 	ob := NewOneBot()
 	pipe := NewPipeline(store, ob, hub)
+	defer pipe.Shutdown()
+	defer ob.Shutdown()
 
 	// Wire OneBot events into the pipeline.
 	ob.onEvent = pipe.Ingest
 	// Track connection transitions for the live status.
-	go watchConnection(ob, hub)
+	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go watchConnection(rootCtx, ob, hub)
 
 	cfg := store.Get()
 	ob.Reconfigure(cfg.OneBot)
@@ -44,32 +52,54 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 	log.Printf("[nap] backend listening on %s", addr)
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("server: %v", err)
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- srv.ListenAndServe() }()
+	select {
+	case err := <-serverErr:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server: %v", err)
+		}
+	case <-rootCtx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("server shutdown: %v", err)
+			_ = srv.Close()
+		}
+		cancel()
+		pipe.Shutdown()
+		ob.Shutdown()
+		<-serverErr
 	}
 }
 
 // watchConnection logs and broadcasts OneBot connect/disconnect transitions.
-func watchConnection(ob *OneBot, hub *Hub) {
+func watchConnection(ctx context.Context, ob *OneBot, hub *Hub) {
 	last := false
 	greeted := false
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
 	for {
-		time.Sleep(2 * time.Second)
-		now := ob.Connected()
-		if now != last {
-			last = now
-			if now {
-				hub.Log("info", 0, "", "已连接到 NapCat OneBot")
-				if !greeted {
-					if li, err := ob.GetLoginInfo(); err == nil {
-						hub.Log("info", 0, "", "当前账号："+li.Nickname)
-						greeted = true
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			now := ob.Connected()
+			if now != last {
+				last = now
+				if now {
+					hub.Log("info", 0, "", "已连接到 NapCat OneBot")
+					if !greeted {
+						if li, err := ob.GetLoginInfoContext(ctx); err == nil {
+							hub.Log("info", 0, "", "当前账号："+li.Nickname)
+							greeted = true
+						}
 					}
+				} else {
+					greeted = false
+					hub.Log("error", 0, "", "与 NapCat 的连接断开，正在重连…")
 				}
-			} else {
-				hub.Log("error", 0, "", "与 NapCat 的连接断开，正在重连…")
+				hub.Broadcast("status", map[string]any{"onebotConnected": now, "selfId": ob.SelfID()})
 			}
-			hub.Broadcast("status", map[string]any{"onebotConnected": now, "selfId": ob.SelfID()})
 		}
 	}
 }
@@ -82,6 +112,8 @@ type logRW struct {
 	http.ResponseWriter
 	status int
 }
+
+func (l *logRW) Unwrap() http.ResponseWriter { return l.ResponseWriter }
 
 func (l *logRW) WriteHeader(code int) {
 	l.status = code

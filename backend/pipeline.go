@@ -74,9 +74,14 @@ type Pipeline struct {
 	jevSlots   chan struct{}
 	generation uint64
 	timerSeq   int64 // monotonic source for timer generations
+	ctx        context.Context
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
+	stopped    bool
 }
 
 func NewPipeline(store *Store, ob *OneBot, hub *Hub) *Pipeline {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Pipeline{
 		store:     store,
 		ob:        ob,
@@ -85,7 +90,38 @@ func NewPipeline(store *Store, ob *OneBot, hub *Hub) *Pipeline {
 		recent:    make(map[int64][]GroupMessage),
 		jevQueues: make(map[int64]*jevQueue),
 		jevSlots:  make(chan struct{}, maxJevConcurrent),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
+}
+
+func (p *Pipeline) Shutdown() {
+	p.mu.Lock()
+	if p.stopped {
+		p.mu.Unlock()
+		return
+	}
+	p.stopped = true
+	p.generation++
+	if p.cancel != nil {
+		p.cancel()
+	}
+	for _, b := range p.buffers {
+		if b.timer != nil {
+			b.timer.Stop()
+		}
+	}
+	for _, q := range p.jevQueues {
+		q.pending = nil
+		if q.cancel != nil {
+			q.cancel()
+		}
+	}
+	p.buffers = make(map[int64]*groupBuffer)
+	p.recent = make(map[int64][]GroupMessage)
+	p.mu.Unlock()
+	p.wg.Wait()
+	p.broadcastBuffers()
 }
 
 // Ingest is the OneBot event hook. It always feeds the live feed, but only
@@ -207,6 +243,10 @@ func (p *Pipeline) pushRecent(gm GroupMessage, n int) []GroupMessage {
 // clears the importance threshold. On any Jev error it fails open.
 func (p *Pipeline) queueJev(cfg Config, sc scored, ctxMsgs []GroupMessage) {
 	p.mu.Lock()
+	if p.stopped {
+		p.mu.Unlock()
+		return
+	}
 	q := p.jevQueues[sc.msg.GroupID]
 	if q == nil {
 		q = &jevQueue{}
@@ -223,12 +263,14 @@ func (p *Pipeline) queueJev(cfg Config, sc scored, ctxMsgs []GroupMessage) {
 	q.pending = append(q.pending, jevWork{cfg: cfg, sc: sc, context: ctxMsgs, generation: p.generation})
 	if !q.running {
 		q.running = true
+		p.wg.Add(1)
 		go p.runJevQueue(sc.msg.GroupID, q)
 	}
 	p.mu.Unlock()
 }
 
 func (p *Pipeline) runJevQueue(groupID int64, q *jevQueue) {
+	defer p.wg.Done()
 	for {
 		p.mu.Lock()
 		if len(q.pending) == 0 {
@@ -241,7 +283,7 @@ func (p *Pipeline) runJevQueue(groupID int64, q *jevQueue) {
 		q.pending[0] = jevWork{}
 		q.pending = q.pending[1:]
 		q.current = &work
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(p.ctx)
 		q.cancel = cancel
 		p.mu.Unlock()
 
@@ -403,7 +445,7 @@ func (p *Pipeline) handleUrgent(cfg Config, groupID int64, groupName string, sc 
 	batch := append(pending, sc)
 	p.hub.Log("urgent", groupID, groupName, fmt.Sprintf("紧急消息（%s）来自 %s，立即处理 %d 条", sc.urgentWhy, sc.msg.Nickname, len(batch)))
 	p.broadcastBuffers()
-	go p.processGeneration(cfg, groupID, groupName, batch, true, generation)
+	p.startProcess(cfg, groupID, groupName, batch, true, generation)
 }
 
 // enqueue adds a normal message to the group buffer and (re)arms the quiet
@@ -485,7 +527,21 @@ func (p *Pipeline) flush(groupID int64, gen int64) {
 
 	cfg := p.store.Get()
 	p.broadcastBuffers()
-	p.processGeneration(cfg, groupID, name, msgs, false, p.currentGeneration())
+	p.startProcess(cfg, groupID, name, msgs, false, p.currentGeneration())
+}
+
+func (p *Pipeline) startProcess(cfg Config, groupID int64, groupName string, batch []scored, urgent bool, generation uint64) {
+	p.mu.Lock()
+	if p.stopped {
+		p.mu.Unlock()
+		return
+	}
+	p.wg.Add(1)
+	p.mu.Unlock()
+	go func() {
+		defer p.wg.Done()
+		p.processGeneration(cfg, groupID, groupName, batch, urgent, generation)
+	}()
 }
 
 func (p *Pipeline) currentGeneration() uint64 {
@@ -533,7 +589,7 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		return
 	}
 
-	res, _, err := callLLM(cfg.LLM, transcript)
+	res, _, err := callLLMContext(p.ctx, cfg.LLM, transcript)
 	if err != nil {
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
@@ -580,21 +636,20 @@ func (p *Pipeline) escalateGeneration(groupID int64, groupName string, res LLMRe
 	}
 	text := formatReminder(groupName, res, urgent)
 
-	sent := 0
+	targets := make([]Master, 0, len(cfg.Masters))
 	for _, m := range cfg.Masters {
-		if !p.active(generation, groupID) {
-			return
+		if res.Level >= m.MinLevel {
+			targets = append(targets, m)
 		}
-		if res.Level < m.MinLevel {
-			continue
-		}
-		if err := p.ob.SendPrivateMsg(m.UserID, text); err != nil {
-			p.hub.Log("error", groupID, groupName, fmt.Sprintf("推送给主人 %d 失败：%v", m.UserID, err))
-			continue
-		}
-		sent++
 	}
-	p.hub.Log("escalate", groupID, groupName, fmt.Sprintf("[%s] %s → 已通知 %d 位主人", levelLabel(res.Level), res.Title, sent))
+	sent, failed := sendPrivateConcurrentContext(p.ctx, p.ob, targets, text)
+	if !p.active(generation, groupID) {
+		return
+	}
+	for _, uid := range failed {
+		p.hub.Log("error", groupID, groupName, fmt.Sprintf("推送给主人 %d 失败", uid))
+	}
+	p.hub.Log("escalate", groupID, groupName, fmt.Sprintf("[%s] %s → 已通知 %d 位主人，失败 %d 位", levelLabel(res.Level), res.Title, sent, len(failed)))
 	p.hub.Escalation(map[string]any{
 		"groupId":  groupID,
 		"group":    groupName,
@@ -606,6 +661,7 @@ func (p *Pipeline) escalateGeneration(groupID int64, groupName string, res LLMRe
 		"event":    res.Event,
 		"deadline": res.Deadline,
 		"notified": sent,
+		"failed":   failed,
 		"urgent":   urgent,
 		"ts":       time.Now().UnixMilli(),
 	})

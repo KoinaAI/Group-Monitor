@@ -731,13 +731,10 @@ func (a *API) handleTestNotify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text := "✅ 测试提醒\n──────────\n这是一条来自 QQ 群哨的测试消息，说明推送通道已打通。"
-	sent, fails := 0, []string{}
-	for _, m := range cfg.Masters {
-		if err := a.ob.SendPrivateMsg(m.UserID, text); err != nil {
-			fails = append(fails, fmt.Sprintf("%d: %v", m.UserID, err))
-			continue
-		}
-		sent++
+	sent, failed := sendPrivateConcurrent(a.ob, cfg.Masters, text)
+	fails := make([]string, 0, len(failed))
+	for _, id := range failed {
+		fails = append(fails, fmt.Sprintf("%d", id))
 	}
 	writeJSON(w, 200, map[string]any{"sent": sent, "failed": fails})
 }
@@ -777,12 +774,40 @@ func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
-	ch := a.hub.Subscribe()
+	var lastID uint64
+	if raw := strings.TrimSpace(r.Header.Get("Last-Event-ID")); raw != "" {
+		lastID, _ = strconv.ParseUint(raw, 10, 64)
+	}
+	ch, replay := a.hub.SubscribeSince(lastID)
 	defer a.hub.Unsubscribe(ch)
 
-	// Prime with a hello + current status so the page renders immediately.
-	fmt.Fprintf(w, "data: %s\n\n", Event{Type: "hello", Data: a.statusPayload(), TS: time.Now().UnixMilli()}.Encode())
-	fl.Flush()
+	write := func(ev Event) error {
+		if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			// Some test writers do not expose a deadline; writing is still safe.
+			if err != http.ErrNotSupported {
+				return err
+			}
+		}
+		payload, err := ev.EncodeChecked()
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "id: %d\ndata: %s\n\n", ev.ID, payload); err != nil {
+			return err
+		}
+		fl.Flush()
+		return nil
+	}
+
+	// Replay missed events before the live stream, then prime with current status.
+	for _, ev := range replay {
+		if err := write(ev); err != nil {
+			return
+		}
+	}
+	if err := write(Event{Type: "hello", Data: a.statusPayload(), TS: time.Now().UnixMilli()}); err != nil {
+		return
+	}
 
 	ping := time.NewTicker(25 * time.Second)
 	defer ping.Stop()
@@ -795,10 +820,16 @@ func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {
 			if !ok {
 				return
 			}
-			fmt.Fprintf(w, "data: %s\n\n", ev.Encode())
-			fl.Flush()
+			if err := write(ev); err != nil {
+				return
+			}
 		case <-ping.C:
-			fmt.Fprintf(w, ": ping\n\n")
+			if err := http.NewResponseController(w).SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil && err != http.ErrNotSupported {
+				return
+			}
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
 			fl.Flush()
 		}
 	}

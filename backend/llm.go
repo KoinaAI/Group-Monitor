@@ -121,6 +121,12 @@ type streamChunk struct {
 // dropped. Endpoints that ignore stream:true and return a normal JSON body are
 // handled by a fallback.
 func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	return callLLMContext(ctx, cfg, userContent)
+}
+
+func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (LLMResult, string, error) {
 	var res LLMResult
 	if cfg.BaseURL == "" {
 		return res, "", fmt.Errorf("no LLM base url")
@@ -132,7 +138,7 @@ func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
 	if to <= 0 {
 		to = 45
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(to)*time.Second)
+	ctx, cancel := context.WithTimeout(parent, time.Duration(to)*time.Second)
 	defer cancel()
 
 	body := chatReq{
