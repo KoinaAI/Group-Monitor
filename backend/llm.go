@@ -74,16 +74,20 @@ type LLMResult struct {
 }
 
 type chatReq struct {
-	Model       string    `json:"model"`
-	Messages    []chatMsg `json:"messages"`
-	Temperature float64   `json:"temperature"`
-	MaxTokens   int       `json:"max_tokens,omitempty"`
-	Stream      bool      `json:"stream"`
+	Model       string        `json:"model"`
+	Messages    []chatMsg     `json:"messages"`
+	Temperature float64       `json:"temperature"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Stream      bool          `json:"stream"`
+	Tools       []historyTool `json:"tools,omitempty"`
+	ToolChoice  string        `json:"tool_choice,omitempty"`
 }
 
 type chatMsg struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string            `json:"role"`
+	Content    string            `json:"content"`
+	ToolCalls  []historyToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string            `json:"tool_call_id,omitempty"`
 }
 
 type chatResp struct {

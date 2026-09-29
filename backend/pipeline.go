@@ -602,11 +602,7 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		return
 	}
 
-	userContent := transcript
-	if history := p.noticeContext(groupID, transcript); history != "" {
-		userContent += "\n\n【历史正式通知参考】\n" + history
-	}
-	res, _, err := callLLMContext(p.ctx, cfg.LLM, userContent)
+	res, _, err := callLLMWithHistoryContext(p.ctx, cfg.LLM, transcript, p.notices, groupID)
 	if err != nil {
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
@@ -673,28 +669,6 @@ func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored
 	if _, err := p.notices.Append(NoticeRecord{GroupID: groupID, Group: limitText(groupName, 256), MessageIDs: ids, Sources: sources, Result: res, Urgent: urgent}); err != nil {
 		p.hub.Log("error", groupID, groupName, "正式通知入库失败："+err.Error())
 	}
-}
-
-func (p *Pipeline) noticeContext(groupID int64, transcript string) string {
-	if p.notices == nil {
-		return ""
-	}
-	// The current transcript is usually a long, multi-sender string, so using it
-	// as one exact search phrase would miss related notices. Load a small recent
-	// window for the same group; the model can decide which item is relevant.
-	rows, err := p.notices.Query(NoticeQuery{GroupID: groupID, Limit: 6})
-	if err != nil || len(rows) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, n := range rows {
-		fmt.Fprintf(&b, "- %s：%s", limitText(n.Result.Title, 80), limitText(n.Result.Summary, 320))
-		if n.Result.Time != "" || n.Result.Deadline != "" {
-			fmt.Fprintf(&b, "（时间：%s，截止：%s）", limitText(n.Result.Time, 80), limitText(n.Result.Deadline, 80))
-		}
-		b.WriteByte('\n')
-	}
-	return strings.TrimSpace(b.String())
 }
 
 // escalate formats the reminder and DMs eligible masters.
