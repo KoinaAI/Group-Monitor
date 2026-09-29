@@ -65,6 +65,7 @@ type GroupMessage struct {
 	HasImage       bool          `json:"hasImage"`
 	MessageID      int64         `json:"messageId"`
 	RawSender      string        `json:"-"`
+	RawMessage     any           `json:"-"` // transient reply/forward payload, never archived
 	Files          []HistoryFile `json:"files,omitempty"`
 	DocumentText   string        `json:"documentText,omitempty"`
 	DocumentErrors []string      `json:"documentErrors,omitempty"`
@@ -316,6 +317,11 @@ func parseGroupMessage(raw map[string]any, selfID int64) GroupMessage {
 	}
 
 	gm.Text, gm.AtAll, gm.AtSelf, gm.HasImage = flattenMessage(raw["message"], selfID)
+	if needsMessageExpansion(raw["message"]) {
+		if b, err := json.Marshal(raw["message"]); err == nil && len(b) <= 256<<10 {
+			gm.RawMessage = raw["message"]
+		}
+	}
 	gm.Files = extractFiles(raw["message"])
 	return gm
 }
@@ -323,67 +329,7 @@ func parseGroupMessage(raw map[string]any, selfID int64) GroupMessage {
 // flattenMessage renders the OneBot "array" message format (and the string
 // fallback) into plain text, and reports @all / @self / image presence.
 func flattenMessage(msg any, selfID int64) (text string, atAll, atSelf, hasImage bool) {
-	var b strings.Builder
-	switch m := msg.(type) {
-	case string:
-		text = m
-	case []any:
-		for _, seg := range m {
-			sm, ok := seg.(map[string]any)
-			if !ok {
-				continue
-			}
-			typ, _ := sm["type"].(string)
-			data, _ := sm["data"].(map[string]any)
-			switch typ {
-			case "text":
-				if t, ok := data["text"].(string); ok {
-					b.WriteString(t)
-				}
-			case "at":
-				if fmt.Sprint(data["qq"]) == "all" {
-					atAll = true
-					b.WriteString("@全体成员 ")
-				} else {
-					id := toInt64(data["qq"])
-					if id == selfID && selfID != 0 {
-						atSelf = true
-					}
-					// Format the integer id directly. A numeric qq arrives as a
-					// JSON float64, and fmt.Sprint on a large float renders it in
-					// scientific notation (e.g. "@3.8069e+09").
-					b.WriteString(fmt.Sprintf("@%d ", id))
-				}
-			case "image":
-				hasImage = true
-				b.WriteString("[图片]")
-			case "face":
-				b.WriteString("[表情]")
-			case "reply":
-				b.WriteString("[引用]")
-			case "record":
-				b.WriteString("[语音]")
-			case "video":
-				b.WriteString("[视频]")
-			case "file":
-				name, _ := data["file"].(string)
-				if name == "" {
-					name, _ = data["name"].(string)
-				}
-				b.WriteString("[文件:" + name + "]")
-			case "json", "xml":
-				b.WriteString("[卡片]")
-			case "forward":
-				b.WriteString("[聊天记录]")
-			case "markdown":
-				if c, ok := data["content"].(string); ok {
-					b.WriteString(c)
-				}
-			}
-		}
-		text = b.String()
-	}
-	return strings.TrimSpace(text), atAll, atSelf, hasImage
+	return flattenUnpackedMessage(msg, selfID)
 }
 
 // ---- HTTP API ----
@@ -622,15 +568,13 @@ func (o *OneBot) GetGroupMsgHistoryContext(ctx context.Context, groupID int64, c
 		return nil, err
 	}
 	nameOf := func(id int64) string { return members[id] }
-	quoteCache := o.prefetchQuotes(ctx, env.Messages)
-	quoteOf := func(id int64) *ReplyQuote {
-		if id == 0 {
-			return nil
-		}
-		return quoteCache[id]
+	rawMessages := make([]any, len(env.Messages))
+	for i, raw := range env.Messages {
+		rawMessages[i] = raw["message"]
 	}
+	expanded := o.ExpandMessagesContext(ctx, groupID, rawMessages)
 	out := make([]HistoryMsg, 0, len(env.Messages))
-	for _, raw := range env.Messages {
+	for i, raw := range env.Messages {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -657,9 +601,9 @@ func (o *OneBot) GetGroupMsgHistoryContext(ctx context.Context, groupID int64, c
 		if hm.Role == "" {
 			hm.Role = "member"
 		}
-		hm.Text, _, _, hm.HasImage = flattenMessage(raw["message"], self)
+		hm.Text, _, _, hm.HasImage = flattenMessage(expanded[i], self)
 		hm.Files = extractFiles(raw["message"])
-		hm.Segments = buildSegments(raw["message"], self, nameOf, quoteOf)
+		hm.Segments = buildSegments(expanded[i], self, nameOf, nil)
 		hm.IsSelf = hm.UserID == self && self != 0
 		out = append(out, hm)
 	}
@@ -769,11 +713,19 @@ func buildSegments(msg any, selfID int64, names func(int64) string, quote func(i
 		case "face":
 			out = append(out, MsgSegment{Type: "face", Text: "[表情]"})
 		case "reply":
-			out = append(out, MsgSegment{Type: "reply", Reply: quote(toInt64(data["id"]))})
+			q := inlineReplyQuote(data)
+			if q == nil && quote != nil {
+				q = quote(toInt64(data["id"]))
+			}
+			out = append(out, MsgSegment{Type: "reply", Reply: q})
 		case "json", "xml":
-			out = append(out, MsgSegment{Type: "card", Text: "[卡片]"})
+			out = append(out, MsgSegment{Type: "card", Text: flattenCard(typ, data)})
 		case "forward":
-			out = append(out, MsgSegment{Type: "forward", Text: "[聊天记录]"})
+			text := flattenForwardInline(data, selfID, 0)
+			if text == "" {
+				text = "[聊天记录]"
+			}
+			out = append(out, MsgSegment{Type: "forward", Text: text})
 		case "markdown":
 			if c, _ := data["content"].(string); c != "" {
 				out = append(out, MsgSegment{Type: "text", Text: c})

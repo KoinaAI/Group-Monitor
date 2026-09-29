@@ -101,7 +101,7 @@ func TestOneBotHTTPContractAndHistory(t *testing.T) {
 		case "/get_group_member_list":
 			fmt.Fprint(w, `{"status":"ok","retcode":0,"data":[{"user_id":123,"card":"小王","nickname":"王"}]}`)
 		case "/get_msg":
-			fmt.Fprint(w, `{"status":"ok","retcode":0,"data":{"user_id":5,"sender":{"nickname":"老师"},"message":"明日集合"}}`)
+			fmt.Fprint(w, `{"status":"ok","retcode":0,"data":{"group_id":42,"user_id":5,"sender":{"nickname":"老师"},"message":"明日集合"}}`)
 		case "/get_record":
 			fmt.Fprintf(w, `{"status":"ok","retcode":0,"data":{"base64":%q}}`, "data:audio/mp3;base64,"+base64.StdEncoding.EncodeToString([]byte("MP3")))
 		case "/get_group_file_url":

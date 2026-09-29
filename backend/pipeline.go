@@ -177,9 +177,9 @@ func (p *Pipeline) Ingest(gm GroupMessage) {
 		p.handleUrgent(cfg, gm.GroupID, gm.GroupName, sc)
 		return
 	}
-	// Classify file-only notices after bounded attachment extraction at flush;
-	// judging only the filename here would discard their actual content.
-	if cfg.Documents.Enabled && len(gm.Files) > 0 {
+	// Classify files, replies and forwards after bounded extraction at flush;
+	// judging only placeholders here would discard their actual content.
+	if (cfg.Documents.Enabled && len(gm.Files) > 0) || gm.RawMessage != nil {
 		p.enqueue(cfg, gm.GroupID, gm.GroupName, sc)
 		return
 	}
@@ -248,6 +248,7 @@ func jevContextN(cfg Config) int {
 func (p *Pipeline) pushRecent(gm GroupMessage, n int) []GroupMessage {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	gm.RawMessage = nil // recent Jev context needs text only
 	r := append(p.recent[gm.GroupID], gm)
 	if len(r) > n+1 {
 		r = r[len(r)-(n+1):]
@@ -582,6 +583,26 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 	}
 	if !p.active(generation, groupID) {
 		return
+	}
+	// Resolve replies/forwards outside the WS reader, before any model judges
+	// placeholders. The entire batch shares one deadline and request budget.
+	rawMessages := make([]any, 0, len(batch))
+	indices := make([]int, 0, len(batch))
+	for i := range batch {
+		if batch[i].msg.RawMessage != nil {
+			rawMessages = append(rawMessages, batch[i].msg.RawMessage)
+			indices = append(indices, i)
+		}
+	}
+	if len(rawMessages) > 0 {
+		expanded := p.ob.ExpandMessagesContext(p.ctx, groupID, rawMessages)
+		for j, i := range indices {
+			batch[i].msg.Text, _, _, _ = flattenMessage(expanded[j], p.ob.SelfID())
+			batch[i].msg.RawMessage = nil
+		}
+		if !p.active(generation, groupID) {
+			return
+		}
 	}
 	if cfg.Documents.Enabled {
 		for i := range batch {
