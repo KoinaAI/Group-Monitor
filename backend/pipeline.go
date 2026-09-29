@@ -622,13 +622,11 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 				Title:   "紧急消息（未经 LLM 处理）",
 				Summary: rawDigest(batch),
 			}
-			if p.active(generation, groupID) {
-				p.persistNotice(groupID, groupName, batch, res, urgent, generation)
-			}
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		} else {
 			p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("已缓冲 %d 条，但 LLM 未启用，普通消息不推送", len(batch)))
 		}
+		p.persistFallbackMessages(groupID, groupName, batch, generation)
 		return
 	}
 
@@ -637,14 +635,13 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
 			res = LLMResult{Useful: true, Level: 3, Title: "紧急消息（LLM 处理失败）", Summary: rawDigest(batch)}
-			if p.active(generation, groupID) {
-				p.persistNotice(groupID, groupName, batch, res, urgent, generation)
-			}
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		}
+		p.persistFallbackMessages(groupID, groupName, batch, generation)
 		return
 	}
 
+	modelUseful := res.Useful && strings.TrimSpace(res.Summary) != ""
 	// Elevate level if an owner/admin/VIP is involved.
 	if cfg.Rules.ElevateOwnerAdmin && topLevel >= LvlAdmin && res.Level < 2 {
 		res.Level = 2
@@ -664,10 +661,29 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("LLM 判定 %d 条为噪音已过滤：%s", len(batch), res.Reason))
 		return
 	}
-	if p.active(generation, groupID) {
+	if modelUseful && p.active(generation, groupID) {
 		p.persistNotice(groupID, groupName, batch, res, urgent, generation)
 	}
 	p.escalateGeneration(groupID, groupName, res, urgent, generation)
+}
+
+// Without a trustworthy distilled summary, classify and save each message
+// independently so acknowledgements folded into an urgent batch stay ephemeral.
+func (p *Pipeline) persistFallbackMessages(groupID int64, groupName string, batch []scored, generation uint64) {
+	cfg := p.store.Get()
+	if p.notices == nil || !cfg.Jev.Enabled || cfg.Jev.APIKey == "" {
+		return
+	}
+	for _, sc := range batch {
+		if !p.active(generation, groupID) {
+			return
+		}
+		res := LLMResult{Useful: true, Level: 1, Title: "群通知", Summary: limitText(groupMessageContent(sc.msg), maxNoticeText)}
+		if sc.urgent {
+			res.Level = 3
+		}
+		p.persistNotice(groupID, groupName, []scored{sc}, res, sc.urgent, generation)
+	}
 }
 
 func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored, res LLMResult, urgent bool, generation uint64) {
@@ -679,6 +695,12 @@ func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored
 		p.hub.Log("info", groupID, groupName, "未配置 Jev，通知仅实时推送，暂不入库")
 		return
 	}
+	select {
+	case p.jevSlots <- struct{}{}:
+	case <-p.ctx.Done():
+		return
+	}
+	defer func() { <-p.jevSlots }()
 	score, err := jevNoticeContext(p.ctx, cfg.Jev, map[string]any{"group": groupName, "current": buildTranscript(groupName, batch)})
 	if err != nil {
 		p.hub.Log("error", groupID, groupName, "Jev 归档判定失败，暂不入库："+err.Error())
@@ -782,7 +804,7 @@ func rawDigest(batch []scored) string {
 func formatReminder(groupName string, res LLMResult, urgent bool) string {
 	groupName = limitText(groupName, 256)
 	res.Title = limitText(res.Title, 256)
-	res.Summary = limitText(res.Summary, 8192)
+	res.Summary = limitText(res.Summary, 1200)
 	res.Time = limitText(res.Time, 256)
 	res.Place = limitText(res.Place, 256)
 	res.Event = limitText(res.Event, 512)

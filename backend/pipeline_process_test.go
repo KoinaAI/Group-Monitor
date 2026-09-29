@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,6 +54,28 @@ func TestPipelineLLMVerdictAndMasterThreshold(t *testing.T) {
 	rows, err := notices.Query(NoticeQuery{GroupID: 100, Limit: 10})
 	if err != nil || len(rows) != 1 || len(rows[0].MessageIDs) != 1 || rows[0].MessageIDs[0] != 77 {
 		t.Fatalf("durable notice rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestJevOnlyArchiveDoesNotKeepAcknowledgements(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		score := 0.9
+		if strings.Contains(string(body), "收到") {
+			score = 0.1
+		}
+		fmt.Fprintf(w, `{"answers":{"important":{"type":"noul","noul":%f}}}`, score)
+	}))
+	defer srv.Close()
+	pipe, store := testPipe(t, func(c *Config) { c.Jev.Enabled = true; c.Jev.APIKey = "key"; c.Jev.BaseURL = srv.URL })
+	defer pipe.Shutdown()
+	notices, _ := NewNoticeStore(t.TempDir())
+	pipe.SetNoticeStore(notices)
+	cfg := store.Get()
+	pipe.process(cfg, 100, "班群", []scored{classify(&cfg, msg(100, 7, "admin", "周五提交材料")), classify(&cfg, msg(100, 8, "member", "收到"))}, false)
+	rows, err := notices.Query(NoticeQuery{GroupID: 100})
+	if err != nil || len(rows) != 1 || strings.Contains(rows[0].Result.Summary, "收到") {
+		t.Fatalf("noise archived: %+v %v", rows, err)
 	}
 }
 
