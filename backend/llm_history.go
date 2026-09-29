@@ -192,7 +192,7 @@ func executeNoticeSearch(ctx context.Context, store *NoticeStore, groupID int64,
 	if ctx.Err() != nil {
 		return toolError("History search cancelled.")
 	}
-	records, err := store.Query(NoticeQuery{GroupID: groupID, Query: strings.TrimSpace(*args.Query), Limit: args.Limit, Before: args.Before})
+	records, err := store.QueryContext(ctx, NoticeQuery{GroupID: groupID, Query: strings.TrimSpace(*args.Query), Limit: args.Limit, Before: args.Before})
 	if err != nil {
 		return toolError("History search unavailable. Use current messages only.")
 	}

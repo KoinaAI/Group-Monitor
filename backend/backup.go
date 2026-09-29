@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/robfig/cron/v3"
 )
@@ -35,6 +36,31 @@ type BackupManager struct {
 	lastRun  time.Time
 	runMu    sync.Mutex
 	uploaded map[string]string
+	status   BackupStatus
+}
+
+type BackupStatus struct {
+	Running       bool   `json:"running"`
+	LastRun       int64  `json:"lastRun"`
+	LastSuccess   int64  `json:"lastSuccess"`
+	LastError     string `json:"lastError"`
+	FilesUploaded int    `json:"filesUploaded"`
+	NextRun       int64  `json:"nextRun,omitempty"`
+}
+
+func (m *BackupManager) Status() BackupStatus {
+	m.mu.Lock()
+	s := m.status
+	m.mu.Unlock()
+	if m.store != nil {
+		cfg := m.store.Get().Backup
+		if cfg.Enabled {
+			if schedule, err := parseCron(cfg.Cron); err == nil {
+				s.NextRun = schedule.Next(time.Now()).UnixMilli()
+			}
+		}
+	}
+	return s
 }
 
 func NewBackupManager(store *Store, notices *NoticeStore, hub *Hub) *BackupManager {
@@ -88,11 +114,27 @@ func (m *BackupManager) log(level, text string) {
 	}
 }
 
-func (m *BackupManager) RunOnce(ctx context.Context, cfg BackupConfig) error {
+func (m *BackupManager) RunOnce(ctx context.Context, cfg BackupConfig) (runErr error) {
 	if !m.runMu.TryLock() {
 		return fmt.Errorf("backup already running")
 	}
 	defer m.runMu.Unlock()
+	m.mu.Lock()
+	m.status.Running = true
+	m.status.LastRun = time.Now().UnixMilli()
+	m.status.FilesUploaded = 0
+	m.status.LastError = ""
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		m.status.Running = false
+		if runErr != nil {
+			m.status.LastError = runErr.Error()
+		} else {
+			m.status.LastSuccess = time.Now().UnixMilli()
+		}
+	}()
 	check := cfg
 	check.Enabled = true
 	if err := validateBackupConfig(check); err != nil {
@@ -155,6 +197,9 @@ func (m *BackupManager) RunOnce(ctx context.Context, cfg BackupConfig) error {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 		m.uploaded[cacheKey] = fingerprint
+		m.mu.Lock()
+		m.status.FilesUploaded++
+		m.mu.Unlock()
 	}
 	return nil
 }

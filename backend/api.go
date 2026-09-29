@@ -126,6 +126,7 @@ func (a *API) Routes() *http.ServeMux {
 		"/api/notices":                a.handleNotices,             // GET durable useful notices
 		"/api/backup":                 a.handleBackup,
 		"/api/backup/run":             a.handleBackupRun,
+		"/api/backup/status":          a.handleBackupStatus,
 		"/api/documents":              a.handleDocuments,
 		"/api/events":                 a.handleSSE, // SSE stream
 	}
@@ -778,6 +779,10 @@ func (a *API) handleEscalations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleNotices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
 	if a.notices == nil {
 		writeJSON(w, 200, []NoticeRecord{})
 		return
@@ -787,7 +792,8 @@ func (a *API) handleNotices(w http.ResponseWriter, r *http.Request) {
 	q.Query = strings.TrimSpace(r.URL.Query().Get("q"))
 	q.Limit, _ = strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	q.Before, _ = strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("before")), 10, 64)
-	rows, err := a.notices.Query(q)
+	q.BeforeID = strings.TrimSpace(r.URL.Query().Get("beforeId"))
+	rows, err := a.notices.QueryContext(r.Context(), q)
 	if err != nil {
 		writeErr(w, 500, "读取正式通知失败："+err.Error())
 		return
@@ -835,6 +841,18 @@ func (a *API) handleBackupRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (a *API) handleBackupStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	if a.backup == nil {
+		writeJSON(w, 200, BackupStatus{})
+		return
+	}
+	writeJSON(w, 200, a.backup.Status())
 }
 
 func (a *API) handleDocuments(w http.ResponseWriter, r *http.Request) {

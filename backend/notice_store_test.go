@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNoticeStoreAppendReopenQueryAndDedupe(t *testing.T) {
@@ -41,6 +44,56 @@ func TestNoticeStoreAppendReopenQueryAndDedupe(t *testing.T) {
 	rows, err = s2.Query(NoticeQuery{GroupID: 42, Limit: 10})
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("reopened query rows=%+v err=%v", rows, err)
+	}
+}
+
+func TestNoticeStoreRotationPagingAndInterruptedAppend(t *testing.T) {
+	s, _ := NewNoticeStore(t.TempDir())
+	s.maxFile = 600
+	stamp := time.Now().UnixMilli()
+	for i := 0; i < 8; i++ {
+		_, err := s.Append(NoticeRecord{ID: fmt.Sprintf("id-%d", i), GroupID: 1, CreatedAt: stamp, Result: LLMResult{Title: "通知"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := s.Query(NoticeQuery{GroupID: 1, Limit: 3})
+	if err != nil || len(first) != 3 || first[0].ID != "id-7" {
+		t.Fatalf("page=%v err=%v", first, err)
+	}
+	second, err := s.Query(NoticeQuery{GroupID: 1, Limit: 3, Before: stamp, BeforeID: first[2].ID})
+	if err != nil || len(second) != 3 || second[0].ID != "id-4" {
+		t.Fatalf("page=%v err=%v", second, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := s.QueryContext(ctx, NoticeQuery{}); err == nil {
+		t.Fatal("query ignored cancellation")
+	}
+	// The base shard's interrupted tail must not consume the next valid record.
+	s.maxFile = 1 << 20
+	file := filepath.Join(s.dir, "notices-"+time.UnixMilli(stamp).Format("20060102")+".jsonl")
+	f, _ := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0600)
+	fmt.Fprint(f, `{"interrupted":`)
+	f.Close()
+	if _, err := s.Append(NoticeRecord{ID: "recovered", GroupID: 1, CreatedAt: stamp + 1}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.Query(NoticeQuery{Limit: 20})
+	if err != nil || len(rows) != 9 || rows[0].ID != "recovered" {
+		t.Fatalf("recovery rows=%v err=%v", rows, err)
+	}
+}
+
+func TestNoticeIDStableAcrossDifferentModelSummaries(t *testing.T) {
+	s, _ := NewNoticeStore(t.TempDir())
+	n := NoticeRecord{GroupID: 1, MessageIDs: []int64{123}, Sources: []NoticeSource{{MessageID: 123, Time: 1, UserID: 2, TextHash: "same"}}, Result: LLMResult{Title: "First summary"}}
+	if _, err := s.Append(n); err != nil {
+		t.Fatal(err)
+	}
+	n.Result.Title = "Rephrased summary"
+	if added, err := s.Append(n); err != nil || added {
+		t.Fatalf("replayed source duplicated: added=%v err=%v", added, err)
 	}
 }
 

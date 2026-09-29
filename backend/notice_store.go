@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -38,10 +40,11 @@ type NoticeRecord struct {
 }
 
 type NoticeQuery struct {
-	GroupID int64
-	Query   string
-	Limit   int
-	Before  int64 // createdAt cursor, exclusive; zero means newest
+	GroupID  int64
+	Query    string
+	Limit    int
+	Before   int64  // createdAt cursor; zero means newest
+	BeforeID string // tie-breaker when multiple notices share a millisecond
 }
 
 // NoticeStore is an append-only, date-sharded JSONL store. It is intentionally
@@ -49,8 +52,9 @@ type NoticeQuery struct {
 type NoticeStore struct {
 	dir       string
 	mu        sync.RWMutex
-	ids       map[string]struct{}
+	ids       map[string]string
 	maxFile   int64
+	maxBytes  int64
 	retention time.Duration
 }
 
@@ -68,7 +72,10 @@ func NewNoticeStore(dir string) (*NoticeStore, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &NoticeStore{dir: dir, ids: make(map[string]struct{}), maxFile: defaultNoticeMaxFile, retention: defaultNoticeDays * 24 * time.Hour}
+	s := &NoticeStore{dir: dir, ids: make(map[string]string), maxFile: defaultNoticeMaxFile, maxBytes: 256 << 20, retention: defaultNoticeDays * 24 * time.Hour}
+	if err := s.pruneLocked(time.Now()); err != nil {
+		return nil, err
+	}
 	if err := s.loadIDs(); err != nil {
 		return nil, err
 	}
@@ -95,7 +102,7 @@ func (s *NoticeStore) loadIDs() error {
 		for sc.Scan() {
 			var n NoticeRecord
 			if json.Unmarshal(sc.Bytes(), &n) == nil && n.ID != "" {
-				s.ids[n.ID] = struct{}{}
+				s.ids[n.ID] = entry.Name()
 			}
 		}
 		_ = f.Close()
@@ -105,7 +112,10 @@ func (s *NoticeStore) loadIDs() error {
 
 func noticeID(groupID int64, ids []int64, sources []NoticeSource, result LLMResult, urgent bool) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d|%t|%s|%s|%s|", groupID, urgent, result.Title, result.Summary, result.Deadline)
+	fmt.Fprintf(&b, "%d|", groupID)
+	if len(ids) == 0 && len(sources) == 0 {
+		fmt.Fprintf(&b, "%t|%s|%s|%s|", urgent, result.Title, result.Summary, result.Deadline)
+	}
 	for _, id := range ids {
 		fmt.Fprintf(&b, "%d,", id)
 	}
@@ -156,9 +166,33 @@ func (s *NoticeStore) Append(n NoticeRecord) (bool, error) {
 			}
 		}
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o600)
 	if err != nil {
 		return false, err
+	}
+	// Recover an interrupted final append before adding another complete line.
+	if info, statErr := f.Stat(); statErr == nil && info.Size() > 0 {
+		size := info.Size()
+		tailSize := int64(1 << 20)
+		if size < tailSize {
+			tailSize = size
+		}
+		tail := make([]byte, tailSize)
+		if _, readErr := f.ReadAt(tail, size-tailSize); readErr != nil {
+			f.Close()
+			return false, readErr
+		}
+		if tail[len(tail)-1] != '\n' {
+			last := strings.LastIndexByte(string(tail), '\n')
+			if last < 0 && size > tailSize {
+				f.Close()
+				return false, fmt.Errorf("invalid notice tail")
+			}
+			if err := f.Truncate(size - tailSize + int64(last+1)); err != nil {
+				f.Close()
+				return false, err
+			}
+		}
 	}
 	_, err = f.Write(append(b, '\n'))
 	if err == nil {
@@ -171,7 +205,7 @@ func (s *NoticeStore) Append(n NoticeRecord) (bool, error) {
 	if closeErr != nil {
 		return false, closeErr
 	}
-	s.ids[n.ID] = struct{}{}
+	s.ids[n.ID] = name
 	return true, s.pruneLocked(time.Now())
 }
 
@@ -181,74 +215,131 @@ func (s *NoticeStore) pruneLocked(now time.Time) error {
 		return err
 	}
 	cutoff := now.Add(-s.retention)
+	type shard struct {
+		name     string
+		size     int64
+		modified time.Time
+	}
+	var files []shard
+	var total int64
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "notices-") || !strings.HasSuffix(entry.Name(), ".jsonl") {
 			continue
 		}
 		info, err := entry.Info()
-		if err == nil && info.ModTime().Before(cutoff) {
-			_ = os.Remove(filepath.Join(s.dir, entry.Name()))
+		if err != nil {
+			return err
+		}
+		files = append(files, shard{entry.Name(), info.Size(), info.ModTime()})
+		total += info.Size()
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].modified.Before(files[j].modified) })
+	for _, file := range files {
+		if !file.modified.Before(cutoff) && (s.maxBytes <= 0 || total <= s.maxBytes) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(s.dir, file.name)); err != nil {
+			return err
+		}
+		total -= file.size
+		for id, name := range s.ids {
+			if name == file.name {
+				delete(s.ids, id)
+			}
 		}
 	}
 	return nil
 }
 
 func (s *NoticeStore) Query(q NoticeQuery) ([]NoticeRecord, error) {
+	return s.QueryContext(context.Background(), q)
+}
+
+func noticeNewer(a, b NoticeRecord) bool {
+	if a.CreatedAt != b.CreatedAt {
+		return a.CreatedAt > b.CreatedAt
+	}
+	return a.ID > b.ID
+}
+
+// Keep only the best N matches in memory, regardless of archive size. Each
+// file is read at a committed size snapshot so concurrent appends are excluded.
+func (s *NoticeStore) QueryContext(ctx context.Context, q NoticeQuery) ([]NoticeRecord, error) {
+	out := make([]NoticeRecord, 0)
 	if s == nil {
-		return nil, nil
+		return out, nil
 	}
 	if q.Limit <= 0 || q.Limit > maxNoticeQuery {
 		q.Limit = 30
 	}
 	needle := strings.ToLower(strings.TrimSpace(q.Query))
-	s.mu.RLock()
 	entries, err := os.ReadDir(s.dir)
-	s.mu.RUnlock()
 	if err != nil {
 		return nil, err
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() > entries[j].Name() })
-	all := make([]NoticeRecord, 0)
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "notices-") || !strings.HasSuffix(entry.Name(), ".jsonl") {
 			continue
 		}
+		s.mu.RLock()
 		f, err := os.Open(filepath.Join(s.dir, entry.Name()))
-		if err != nil {
-			continue
-		}
-		var rows []NoticeRecord
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 1024), 1<<20)
-		for sc.Scan() {
-			var n NoticeRecord
-			if json.Unmarshal(sc.Bytes(), &n) == nil {
-				rows = append(rows, n)
+		var size int64
+		if err == nil {
+			var info os.FileInfo
+			info, err = f.Stat()
+			if err == nil {
+				size = info.Size()
 			}
 		}
-		_ = f.Close()
-		all = append(all, rows...)
-	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].CreatedAt != all[j].CreatedAt {
-			return all[i].CreatedAt > all[j].CreatedAt
-		}
-		return all[i].ID > all[j].ID
-	})
-	out := make([]NoticeRecord, 0, q.Limit)
-	for _, n := range all {
-		if q.GroupID != 0 && n.GroupID != q.GroupID || q.Before != 0 && n.CreatedAt >= q.Before {
-			continue
-		}
-		if needle != "" {
-			hay := strings.ToLower(n.Group + " " + n.Result.Title + " " + n.Result.Summary + " " + n.Result.Event)
-			if !strings.Contains(hay, needle) {
+		s.mu.RUnlock()
+		if err != nil {
+			if f != nil {
+				f.Close()
+			}
+			if os.IsNotExist(err) {
 				continue
 			}
+			return nil, err
 		}
-		out = append(out, n)
-		if len(out) >= q.Limit {
-			return out, nil
+		sc := bufio.NewScanner(io.LimitReader(f, size))
+		sc.Buffer(make([]byte, 1024), 1<<20)
+		for sc.Scan() {
+			if err := ctx.Err(); err != nil {
+				f.Close()
+				return nil, err
+			}
+			var n NoticeRecord
+			if json.Unmarshal(sc.Bytes(), &n) != nil || n.ID == "" {
+				continue
+			}
+			if q.GroupID != 0 && n.GroupID != q.GroupID {
+				continue
+			}
+			if q.Before != 0 && (n.CreatedAt > q.Before || n.CreatedAt == q.Before && (q.BeforeID == "" || n.ID >= q.BeforeID)) {
+				continue
+			}
+			hay := strings.ToLower(n.Group + " " + n.Result.Title + " " + n.Result.Summary + " " + n.Result.Event + " " + n.Result.Deadline)
+			if needle != "" && !strings.Contains(hay, needle) {
+				continue
+			}
+			at := sort.Search(len(out), func(i int) bool { return noticeNewer(n, out[i]) })
+			if at >= q.Limit {
+				continue
+			}
+			out = append(out, NoticeRecord{})
+			copy(out[at+1:], out[at:])
+			out[at] = n
+			if len(out) > q.Limit {
+				out = out[:q.Limit]
+			}
+		}
+		err = sc.Err()
+		f.Close()
+		if err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
