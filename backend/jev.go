@@ -149,7 +149,7 @@ func jevState(gm GroupMessage, ctxMsgs []GroupMessage) map[string]any {
 }
 
 func jevLine(m GroupMessage) string {
-	txt := m.Text
+	txt := limitText(groupMessageContent(m), 12000)
 	if txt == "" {
 		if m.HasImage {
 			txt = "[图片]"

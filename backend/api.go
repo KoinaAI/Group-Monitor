@@ -63,6 +63,7 @@ func redactedConfig(c Config) Config {
 	c.Jev.APIKey = ""
 	c.Backup.AccessKey = ""
 	c.Backup.SecretKey = ""
+	c.Documents.APIKey = ""
 	return c
 }
 
@@ -125,6 +126,7 @@ func (a *API) Routes() *http.ServeMux {
 		"/api/notices":                a.handleNotices,             // GET durable useful notices
 		"/api/backup":                 a.handleBackup,
 		"/api/backup/run":             a.handleBackupRun,
+		"/api/documents":              a.handleDocuments,
 		"/api/events":                 a.handleSSE, // SSE stream
 	}
 	for path, h := range protected {
@@ -833,6 +835,30 @@ func (a *API) handleBackupRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
+}
+
+func (a *API) handleDocuments(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	var documents DocumentConfig
+	if err := decodeJSON(w, r, &documents, maxJSONBody); err != nil {
+		writeErr(w, 400, "invalid body")
+		return
+	}
+	cfg, err := a.store.Update(func(c *Config) {
+		if documents.APIKey == "" {
+			documents.APIKey = c.Documents.APIKey
+		}
+		c.Documents = documents
+	})
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	a.pipe.Reconcile(cfg)
+	writeJSON(w, 200, redactedConfig(cfg).Documents)
 }
 
 func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {

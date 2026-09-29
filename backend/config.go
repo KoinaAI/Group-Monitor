@@ -22,7 +22,8 @@ type Config struct {
 	// (with recent context) before it enters the packing queue.
 	Jev JevConfig `json:"jev"`
 	// Backup uploads only finalized notice shards to an S3-compatible bucket.
-	Backup BackupConfig `json:"backup"`
+	Backup    BackupConfig   `json:"backup"`
+	Documents DocumentConfig `json:"documents"`
 
 	// Masters receive the distilled reminders (their QQ user IDs).
 	Masters []Master `json:"masters"`
@@ -209,8 +210,9 @@ func defaultConfig() Config {
 			Region:   "auto",
 			Timeout:  60,
 		},
-		Masters: []Master{},
-		Groups:  []GroupWatch{},
+		Documents: defaultDocumentConfig(),
+		Masters:   []Master{},
+		Groups:    []GroupWatch{},
 		Rules: Rules{
 			QuietWindowSec:    120,
 			MaxHoldSec:        600,
@@ -401,6 +403,9 @@ func validateConfig(c Config) error {
 	}
 	if err := validateBackupConfig(c.Backup); err != nil {
 		return fmt.Errorf("backup: %w", err)
+	}
+	if err := validateDocumentConfig(c.Documents); err != nil {
+		return fmt.Errorf("documents: %w", err)
 	}
 	return nil
 }

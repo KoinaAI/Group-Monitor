@@ -66,10 +66,12 @@ type jevQueue struct {
 }
 
 type Pipeline struct {
-	store   *Store
-	ob      *OneBot
-	hub     *Hub
-	notices *NoticeStore
+	store         *Store
+	ob            *OneBot
+	hub           *Hub
+	notices       *NoticeStore
+	documents     *DocumentReader
+	documentSlots chan struct{}
 
 	mu         sync.Mutex
 	buffers    map[int64]*groupBuffer
@@ -87,15 +89,17 @@ type Pipeline struct {
 func NewPipeline(store *Store, ob *OneBot, hub *Hub) *Pipeline {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Pipeline{
-		store:     store,
-		ob:        ob,
-		hub:       hub,
-		buffers:   make(map[int64]*groupBuffer),
-		recent:    make(map[int64][]GroupMessage),
-		jevQueues: make(map[int64]*jevQueue),
-		jevSlots:  make(chan struct{}, maxJevConcurrent),
-		ctx:       ctx,
-		cancel:    cancel,
+		store:         store,
+		ob:            ob,
+		hub:           hub,
+		documents:     NewDocumentReader(ob),
+		documentSlots: make(chan struct{}, 2),
+		buffers:       make(map[int64]*groupBuffer),
+		recent:        make(map[int64][]GroupMessage),
+		jevQueues:     make(map[int64]*jevQueue),
+		jevSlots:      make(chan struct{}, maxJevConcurrent),
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 }
 
@@ -171,6 +175,12 @@ func (p *Pipeline) Ingest(gm GroupMessage) {
 
 	if sc.urgent {
 		p.handleUrgent(cfg, gm.GroupID, gm.GroupName, sc)
+		return
+	}
+	// Classify file-only notices after bounded attachment extraction at flush;
+	// judging only the filename here would discard their actual content.
+	if cfg.Documents.Enabled && len(gm.Files) > 0 {
+		p.enqueue(cfg, gm.GroupID, gm.GroupName, sc)
 		return
 	}
 
@@ -573,6 +583,26 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 	if !p.active(generation, groupID) {
 		return
 	}
+	if cfg.Documents.Enabled {
+		for i := range batch {
+			if len(batch[i].msg.Files) == 0 {
+				continue
+			}
+			select {
+			case p.documentSlots <- struct{}{}:
+			case <-p.ctx.Done():
+				return
+			}
+			batch[i].msg = p.documents.Enrich(p.ctx, cfg.Documents, batch[i].msg)
+			<-p.documentSlots
+			for _, err := range batch[i].msg.DocumentErrors {
+				p.hub.Log("error", groupID, groupName, "附件读取："+err)
+			}
+			if !p.active(generation, groupID) {
+				return
+			}
+		}
+	}
 	// Highest sender level in the batch drives elevation.
 	topLevel := LvlNormal
 	for _, s := range batch {
@@ -663,7 +693,7 @@ func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored
 		if s.msg.MessageID != 0 {
 			ids = append(ids, s.msg.MessageID)
 		}
-		textHash := sha256.Sum256([]byte(s.msg.Text))
+		textHash := sha256.Sum256([]byte(groupMessageContent(s.msg)))
 		sources = append(sources, NoticeSource{MessageID: s.msg.MessageID, Time: s.msg.Time, UserID: s.msg.UserID, Nickname: limitText(s.msg.Nickname, 128), TextHash: hex.EncodeToString(textHash[:8]), JevNoul: s.jevNoul})
 	}
 	if _, err := p.notices.Append(NoticeRecord{GroupID: groupID, Group: limitText(groupName, 256), MessageIDs: ids, Sources: sources, Result: res, Urgent: urgent}); err != nil {
@@ -721,7 +751,7 @@ func buildTranscript(groupName string, batch []scored) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "群聊：%s\n消息条数：%d\n\n", limitText(groupName, 256), len(batch))
 	for _, s := range batch {
-		if b.Len() >= maxTranscriptBytes-5000 {
+		if b.Len() >= maxTranscriptBytes-13000 {
 			break
 		}
 		t := time.Unix(s.msg.Time, 0).Format("15:04:05")
@@ -732,7 +762,7 @@ func buildTranscript(groupName string, batch []scored) string {
 		if s.urgent {
 			tag += "‼"
 		}
-		fmt.Fprintf(&b, "[%s] %s%s(%s,QQ%d): %s\n", t, tag, limitText(s.msg.Nickname, 128), s.senderLabel, s.msg.UserID, limitText(s.msg.Text, 4096))
+		fmt.Fprintf(&b, "[%s] %s%s(%s,QQ%d): %s\n", t, tag, limitText(s.msg.Nickname, 128), s.senderLabel, s.msg.UserID, limitText(groupMessageContent(s.msg), 12000))
 	}
 	return b.String()
 }
@@ -740,10 +770,10 @@ func buildTranscript(groupName string, batch []scored) string {
 func rawDigest(batch []scored) string {
 	var b strings.Builder
 	for _, s := range batch {
-		if b.Len() >= maxDigestBytes-5000 {
+		if b.Len() >= maxDigestBytes-13000 {
 			break
 		}
-		fmt.Fprintf(&b, "· %s：%s\n", limitText(s.msg.Nickname, 128), limitText(s.msg.Text, 4096))
+		fmt.Fprintf(&b, "· %s：%s\n", limitText(s.msg.Nickname, 128), limitText(groupMessageContent(s.msg), 12000))
 	}
 	return strings.TrimSpace(b.String())
 }

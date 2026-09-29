@@ -53,18 +53,21 @@ type OneBot struct {
 
 // GroupMessage is the normalised form of an OneBot group message event.
 type GroupMessage struct {
-	Time      int64  `json:"time"`
-	GroupID   int64  `json:"groupId"`
-	GroupName string `json:"groupName"`
-	UserID    int64  `json:"userId"`
-	Nickname  string `json:"nickname"` // card if present, else nickname
-	Role      string `json:"role"`     // owner | admin | member
-	Text      string `json:"text"`     // flattened plain text
-	AtAll     bool   `json:"atAll"`
-	AtSelf    bool   `json:"atSelf"`
-	HasImage  bool   `json:"hasImage"`
-	MessageID int64  `json:"messageId"`
-	RawSender string `json:"-"`
+	Time           int64         `json:"time"`
+	GroupID        int64         `json:"groupId"`
+	GroupName      string        `json:"groupName"`
+	UserID         int64         `json:"userId"`
+	Nickname       string        `json:"nickname"` // card if present, else nickname
+	Role           string        `json:"role"`     // owner | admin | member
+	Text           string        `json:"text"`     // flattened plain text
+	AtAll          bool          `json:"atAll"`
+	AtSelf         bool          `json:"atSelf"`
+	HasImage       bool          `json:"hasImage"`
+	MessageID      int64         `json:"messageId"`
+	RawSender      string        `json:"-"`
+	Files          []HistoryFile `json:"files,omitempty"`
+	DocumentText   string        `json:"documentText,omitempty"`
+	DocumentErrors []string      `json:"documentErrors,omitempty"`
 }
 
 func NewOneBot() *OneBot {
@@ -228,6 +231,19 @@ func (o *OneBot) handleFrameForGeneration(data []byte, gen uint64) {
 	if sid, ok := raw["self_id"].(float64); ok {
 		o.selfID.Store(int64(sid))
 	}
+	// OneBot v11 also reports uploaded group files as group_upload notices,
+	// without a message segment. Send those through the same document gate.
+	if raw["post_type"] == "notice" && raw["notice_type"] == "group_upload" {
+		if file, ok := raw["file"].(map[string]any); ok && toStr(file["id"]) != "" {
+			gm := parseGroupMessage(raw, o.SelfID())
+			gm.Files = []HistoryFile{{Name: toStr(file["name"]), FileID: toStr(file["id"]), Size: toInt64(file["size"]), Busid: toInt64(file["busid"])}}
+			gm.Text = "[文件:" + gm.Files[0].Name + "]"
+			if o.onEvent != nil && gm.GroupID > 0 {
+				o.onEvent(gm)
+			}
+		}
+		return
+	}
 	if raw["post_type"] != "message" {
 		return
 	}
@@ -300,6 +316,7 @@ func parseGroupMessage(raw map[string]any, selfID int64) GroupMessage {
 	}
 
 	gm.Text, gm.AtAll, gm.AtSelf, gm.HasImage = flattenMessage(raw["message"], selfID)
+	gm.Files = extractFiles(raw["message"])
 	return gm
 }
 
@@ -350,6 +367,9 @@ func flattenMessage(msg any, selfID int64) (text string, atAll, atSelf, hasImage
 				b.WriteString("[视频]")
 			case "file":
 				name, _ := data["file"].(string)
+				if name == "" {
+					name, _ = data["name"].(string)
+				}
 				b.WriteString("[文件:" + name + "]")
 			case "json", "xml":
 				b.WriteString("[卡片]")
@@ -668,6 +688,12 @@ func extractFiles(msg any) []HistoryFile {
 		}
 		f := HistoryFile{Busid: toInt64(data["busid"]), Size: toInt64(data["file_size"])}
 		f.Name, _ = data["file"].(string)
+		if f.Name == "" {
+			f.Name, _ = data["name"].(string)
+		}
+		if f.Size == 0 {
+			f.Size = toInt64(data["size"])
+		}
 		f.FileID = toStr(data["file_id"])
 		if f.FileID == "" {
 			f.FileID = toStr(data["file_unique"])
@@ -901,11 +927,15 @@ func collectReplyIDs(msg any, ids map[int64]struct{}) {
 // GetGroupFileURL resolves a short-lived download URL for a group file. busid is
 // optional (0 omits it) for newer NapCat builds that key only on file_id.
 func (o *OneBot) GetGroupFileURL(groupID int64, fileID string, busid int64) (string, error) {
+	return o.GetGroupFileURLContext(context.Background(), groupID, fileID, busid)
+}
+
+func (o *OneBot) GetGroupFileURLContext(ctx context.Context, groupID int64, fileID string, busid int64) (string, error) {
 	params := map[string]any{"group_id": groupID, "file_id": fileID}
 	if busid != 0 {
 		params["busid"] = busid
 	}
-	data, err := o.call("get_group_file_url", params)
+	data, err := o.callContext(ctx, "get_group_file_url", params)
 	if err != nil {
 		return "", err
 	}
