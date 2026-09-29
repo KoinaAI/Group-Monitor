@@ -73,3 +73,31 @@ cd backend && go test ./...
 覆盖：发送者分级、紧急判定、群过滤与除抖、Jev/LLM 响应、OneBot 消息解析与历史、配置持久化、REST/SSE、OTP 登录与主人绑定、会话和应急密码。
 
 每次 push 和 pull request 都会触发 GitHub Actions 的 Backend CI：检查 `gofmt`、运行 `go vet ./...`、`go test -race -coverprofile=coverage.out ./...` 并输出覆盖率摘要。
+
+## Docker / GHCR
+
+镜像包含 Nginx 前端和 Go 后端，容器端口 `8080` 提供控制台、REST 与 SSE；配置文件保存在 `/data/config.json`。
+
+```bash
+docker run --name group-monitor \
+  -p 8787:8080 \
+  -v group-monitor-data:/data \
+  -e NAP_PASSWORD='your-break-glass-password' \
+  ghcr.io/koinai/group-monitor:latest
+```
+
+构建并推送镜像需要先登录 GHCR：
+
+```bash
+echo "$CR_PAT" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
+export HEROUI_KEY='your-private-heroui-key'
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/koinai/group-monitor:latest \
+  -t ghcr.io/koinai/group-monitor:$(git rev-parse --short HEAD) \
+  --secret id=heroui_key,env=HEROUI_KEY \
+  --push .
+```
+
+`HEROUI_KEY` 仅作为 BuildKit secret 使用，不会写入镜像或 Git；构建机需要先用 `hpsetup` 授权 HeroUI Pro。
+
+容器内后端仍通过 `NAP_ADDR`、`NAP_CONFIG`、`NAP_PASSWORD` 和 `NAP_SESSION_HOURS` 配置；部署到公网时请在外层提供 TLS。
