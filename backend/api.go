@@ -65,7 +65,7 @@ func redactedConfig(c Config) Config {
 func NewAPI(store *Store, ob *OneBot, hub *Hub, pipe *Pipeline) *API {
 	ttl := defaultSessTTL
 	if h := os.Getenv("NAP_SESSION_HOURS"); h != "" {
-		if n, err := strconv.Atoi(h); err == nil && n > 0 {
+		if n, err := strconv.Atoi(h); err == nil && n > 0 && n <= int(maxSessTTL/time.Hour) {
 			ttl = time.Duration(n) * time.Hour
 		}
 	}

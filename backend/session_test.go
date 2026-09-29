@@ -195,6 +195,34 @@ func TestPasswordLockout(t *testing.T) {
 	}
 }
 
+func TestPasswordLockoutIsPerClient(t *testing.T) {
+	a := newTestAPI(t)
+	a.password = "correct"
+	postFrom := func(addr, password string) *httptest.ResponseRecorder {
+		b, _ := json.Marshal(map[string]string{"password": password})
+		r := httptest.NewRequest("POST", "/api/auth/password", bytes.NewReader(b))
+		r.RemoteAddr = addr
+		w := httptest.NewRecorder()
+		a.handlePassword(w, r)
+		return w
+	}
+	for i := 0; i < pwMaxAttempts; i++ {
+		postFrom("192.0.2.10:1", "wrong")
+	}
+	if w := postFrom("192.0.2.10:1", "correct"); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("first client should be locked, got %d", w.Code)
+	}
+	if w := postFrom("192.0.2.11:1", "correct"); w.Code != http.StatusOK {
+		t.Fatalf("second client should not inherit lockout, got %d", w.Code)
+	}
+}
+
+func TestSessionTTLIsBounded(t *testing.T) {
+	if got := newSessionStore(maxSessTTL + time.Hour).ttl; got != defaultSessTTL {
+		t.Fatalf("oversized ttl=%s", got)
+	}
+}
+
 // ---- public auth status ----
 
 func TestAuthStatusReflectsAvailability(t *testing.T) {

@@ -105,6 +105,29 @@ func TestLoginOTPRequestDeliveryCooldownAndVerify(t *testing.T) {
 	}
 }
 
+func TestPasswordAvailableAfterAllOTPDeliveriesFail(t *testing.T) {
+	a := newTestAPI(t)
+	a.password = "hunter2"
+	a.ob.connected.Store(true)
+	_, err := a.store.Update(func(c *Config) { c.Masters = []Master{{UserID: 1}} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprint(w, `failed`)
+	}))
+	defer srv.Close()
+	a.ob.httpBase = srv.URL
+	w, _ := authJSON(t, a, "/api/auth/otp/request", "", nil)
+	if w.Code != http.StatusBadGateway || !a.passwordAvailable() {
+		t.Fatalf("failed OTP delivery should enable password: status=%d available=%v", w.Code, a.passwordAvailable())
+	}
+	if w := postPassword(t, a, "hunter2"); w.Code != http.StatusOK {
+		t.Fatalf("emergency password after delivery failure=%d", w.Code)
+	}
+}
+
 func TestLoginOTPRequestRequiresConnectionAndFullMaster(t *testing.T) {
 	a := newTestAPI(t)
 	if w, _ := authJSON(t, a, "/api/auth/otp/request", "", nil); w.Code != 409 {

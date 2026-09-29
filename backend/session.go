@@ -21,6 +21,7 @@ import (
 const (
 	sessionCookie  = "nap_session"
 	defaultSessTTL = 12 * time.Hour
+	maxSessTTL     = 30 * 24 * time.Hour
 )
 
 type sessionStore struct {
@@ -30,7 +31,7 @@ type sessionStore struct {
 }
 
 func newSessionStore(ttl time.Duration) *sessionStore {
-	if ttl <= 0 {
+	if ttl <= 0 || ttl > maxSessTTL {
 		ttl = defaultSessTTL
 	}
 	return &sessionStore{sessions: make(map[string]time.Time), ttl: ttl}
@@ -49,7 +50,7 @@ func (s *sessionStore) create() (string, error) {
 	defer s.mu.Unlock()
 	now := time.Now()
 	for t, exp := range s.sessions {
-		if now.After(exp) {
+		if !now.Before(exp) {
 			delete(s.sessions, t)
 		}
 	}
@@ -68,7 +69,7 @@ func (s *sessionStore) valid(token string) bool {
 	if !ok {
 		return false
 	}
-	if time.Now().After(exp) {
+	if !time.Now().Before(exp) {
 		delete(s.sessions, token)
 		return false
 	}

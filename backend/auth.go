@@ -5,7 +5,9 @@ import (
 	"crypto/subtle"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,11 +16,14 @@ import (
 // in this backend now: it mints, delivers (via master DMs) and verifies the
 // code, then issues a session on success. The code never leaves the backend.
 type otpState struct {
-	mu       sync.Mutex
-	code     string
-	expires  time.Time
-	attempts int
-	lastReq  time.Time // throttles the (pre-auth) request endpoint
+	mu               sync.Mutex
+	code             string
+	expires          time.Time
+	attempts         int
+	lastReq          time.Time // throttles the (pre-auth) request endpoint
+	lastReqByClient  map[string]time.Time
+	attemptsByClient map[string]int
+	unavailableUntil time.Time
 }
 
 const (
@@ -33,12 +38,39 @@ type pwState struct {
 	mu          sync.Mutex
 	attempts    int
 	lockedUntil time.Time
+	clients     map[string]pwClientState
+}
+
+type pwClientState struct {
+	attempts    int
+	lockedUntil time.Time
 }
 
 const (
-	pwMaxAttempts = 5
-	pwLockout     = 15 * time.Minute
+	pwMaxAttempts  = 5
+	pwLockout      = 15 * time.Minute
+	maxAuthClients = 1024
 )
+
+func authClientKey(r *http.Request) string {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
+}
+
+func pruneAuthClients[T any](m map[string]T) {
+	for len(m) > maxAuthClients {
+		for key := range m {
+			delete(m, key)
+			break
+		}
+	}
+}
 
 func genOTP() (string, error) {
 	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
@@ -69,14 +101,21 @@ func (a *API) handleOtpRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Throttle before doing any work: reject if the last request was too recent.
+	clientKey := authClientKey(r)
 	a.otp.mu.Lock()
-	if since := time.Since(a.otp.lastReq); !a.otp.lastReq.IsZero() && since < otpCooldown {
+	if a.otp.lastReqByClient == nil {
+		a.otp.lastReqByClient = make(map[string]time.Time)
+	}
+	lastReq := a.otp.lastReqByClient[clientKey]
+	if since := time.Since(lastReq); !lastReq.IsZero() && since < otpCooldown {
 		wait := int((otpCooldown - since).Seconds()) + 1
 		a.otp.mu.Unlock()
 		writeErr(w, 429, fmt.Sprintf("请求过于频繁，请 %d 秒后再试", wait))
 		return
 	}
 	a.otp.lastReq = time.Now()
+	a.otp.lastReqByClient[clientKey] = a.otp.lastReq
+	pruneAuthClients(a.otp.lastReqByClient)
 	a.otp.mu.Unlock()
 
 	code, err := genOTP()
@@ -95,6 +134,13 @@ func (a *API) handleOtpRequest(w http.ResponseWriter, r *http.Request) {
 		sent++
 	}
 	if sent == 0 {
+		a.otp.mu.Lock()
+		a.otp.code = ""
+		a.otp.expires = time.Time{}
+		a.otp.attempts = 0
+		a.otp.attemptsByClient = nil
+		a.otp.unavailableUntil = time.Now().Add(otpTTL)
+		a.otp.mu.Unlock()
 		writeErr(w, 502, "验证码发送失败，请检查主人 QQ 是否可私聊")
 		return
 	}
@@ -103,6 +149,8 @@ func (a *API) handleOtpRequest(w http.ResponseWriter, r *http.Request) {
 	a.otp.code = code
 	a.otp.expires = time.Now().Add(otpTTL)
 	a.otp.attempts = 0
+	a.otp.attemptsByClient = make(map[string]int)
+	a.otp.unavailableUntil = time.Time{}
 	a.otp.mu.Unlock()
 
 	a.hub.Log("info", 0, "", fmt.Sprintf("已向 %d 位主人发送登录验证码", sent))
@@ -126,6 +174,7 @@ func (a *API) handleOtpVerify(w http.ResponseWriter, r *http.Request) {
 
 	a.otp.mu.Lock()
 	defer a.otp.mu.Unlock()
+	clientKey := authClientKey(r)
 
 	if a.otp.code == "" {
 		writeJSON(w, 200, map[string]any{"ok": false, "reason": "尚未获取验证码，请先点击获取"})
@@ -133,11 +182,17 @@ func (a *API) handleOtpVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if time.Now().After(a.otp.expires) {
 		a.otp.code = ""
+		delete(a.otp.attemptsByClient, clientKey)
 		writeJSON(w, 200, map[string]any{"ok": false, "reason": "验证码已过期，请重新获取"})
 		return
 	}
-	if a.otp.attempts >= otpMaxAttempts {
+	attempts := a.otp.attemptsByClient[clientKey]
+	if len(a.otp.attemptsByClient) == 0 {
+		attempts = a.otp.attempts
+	}
+	if attempts >= otpMaxAttempts {
 		a.otp.code = ""
+		delete(a.otp.attemptsByClient, clientKey)
 		writeJSON(w, 200, map[string]any{"ok": false, "reason": "尝试次数过多，请重新获取验证码"})
 		return
 	}
@@ -145,12 +200,19 @@ func (a *API) handleOtpVerify(w http.ResponseWriter, r *http.Request) {
 	if subtle.ConstantTimeCompare([]byte(body.Code), []byte(a.otp.code)) == 1 {
 		a.otp.code = "" // consume: one-time use
 		a.otp.attempts = 0
+		delete(a.otp.attemptsByClient, clientKey)
 		a.hub.Log("info", 0, "", "已通过验证码登录")
 		a.issueSession(w, r)
 		return
 	}
-	a.otp.attempts++
-	left := otpMaxAttempts - a.otp.attempts
+	attempts++
+	if a.otp.attemptsByClient == nil {
+		a.otp.attemptsByClient = make(map[string]int)
+	}
+	a.otp.attemptsByClient[clientKey] = attempts
+	a.otp.attempts = attempts
+	pruneAuthClients(a.otp.attemptsByClient)
+	left := otpMaxAttempts - attempts
 	writeJSON(w, 200, map[string]any{"ok": false, "reason": fmt.Sprintf("验证码不正确，还可尝试 %d 次", left)})
 }
 
@@ -162,7 +224,12 @@ func (a *API) passwordAvailable() bool {
 	if a.password == "" {
 		return false
 	}
-	return !a.ob.Connected() || len(a.store.Get().FullMasters()) == 0
+	if !a.ob.Connected() || len(a.store.Get().FullMasters()) == 0 {
+		return true
+	}
+	a.otp.mu.Lock()
+	defer a.otp.mu.Unlock()
+	return time.Now().Before(a.otp.unavailableUntil)
 }
 
 // handlePassword verifies the break-glass password (constant time) and issues a
@@ -189,27 +256,40 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	clientKey := authClientKey(r)
 	a.pw.mu.Lock()
-	if now := time.Now(); now.Before(a.pw.lockedUntil) {
-		wait := int(time.Until(a.pw.lockedUntil).Seconds()) + 1
+	if a.pw.clients == nil {
+		a.pw.clients = make(map[string]pwClientState)
+	}
+	state := a.pw.clients[clientKey]
+	if now := time.Now(); now.Before(state.lockedUntil) {
+		wait := int(time.Until(state.lockedUntil).Seconds()) + 1
 		a.pw.mu.Unlock()
 		writeErr(w, 429, fmt.Sprintf("尝试次数过多，请 %d 秒后再试", wait))
 		return
 	}
 	if subtle.ConstantTimeCompare([]byte(body.Password), []byte(a.password)) != 1 {
-		a.pw.attempts++
-		left := pwMaxAttempts - a.pw.attempts
-		if a.pw.attempts >= pwMaxAttempts {
-			a.pw.lockedUntil = time.Now().Add(pwLockout)
-			a.pw.attempts = 0
+		state.attempts++
+		left := pwMaxAttempts - state.attempts
+		if state.attempts >= pwMaxAttempts {
+			state.lockedUntil = time.Now().Add(pwLockout)
+			state.attempts = 0
+			a.pw.clients[clientKey] = state
+			pruneAuthClients(a.pw.clients)
 			a.pw.mu.Unlock()
 			writeJSON(w, 200, map[string]any{"ok": false, "reason": "密码错误次数过多，已临时锁定 15 分钟"})
 			return
 		}
+		a.pw.clients[clientKey] = state
+		pruneAuthClients(a.pw.clients)
+		a.pw.attempts = state.attempts
 		a.pw.mu.Unlock()
 		writeJSON(w, 200, map[string]any{"ok": false, "reason": fmt.Sprintf("密码不正确，还可尝试 %d 次", left)})
 		return
 	}
+	state.attempts = 0
+	state.lockedUntil = time.Time{}
+	a.pw.clients[clientKey] = state
 	a.pw.attempts = 0
 	a.pw.mu.Unlock()
 
