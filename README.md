@@ -100,4 +100,6 @@ docker buildx build --platform linux/amd64 \
 
 `HEROUI_KEY` 仅作为 BuildKit secret 使用，不会写入镜像或 Git；构建机需要先用 `hpsetup` 授权 HeroUI Pro。
 
+推送到 `master` 会触发 `.github/workflows/docker-publish.yml`，使用仓库的 `GITHUB_TOKEN` 自动发布 `latest` 和提交短 SHA 标签；Actions secret 需要配置为 `HEROUI_KEY`。
+
 容器内后端仍通过 `NAP_ADDR`、`NAP_CONFIG`、`NAP_PASSWORD` 和 `NAP_SESSION_HOURS` 配置；部署到公网时请在外层提供 TLS。
