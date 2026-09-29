@@ -19,6 +19,7 @@ type API struct {
 	hub       *Hub
 	pipe      *Pipeline
 	notices   *NoticeStore
+	backup    *BackupManager
 	otp       otpState
 	masterOtp masterOtpState
 
@@ -60,6 +61,8 @@ func redactedConfig(c Config) Config {
 	c.OneBot.Token = ""
 	c.LLM.APIKey = ""
 	c.Jev.APIKey = ""
+	c.Backup.AccessKey = ""
+	c.Backup.SecretKey = ""
 	return c
 }
 
@@ -81,6 +84,8 @@ func NewAPI(store *Store, ob *OneBot, hub *Hub, pipe *Pipeline) *API {
 }
 
 func (a *API) SetNoticeStore(store *NoticeStore) { a.notices = store }
+
+func (a *API) SetBackupManager(backup *BackupManager) { a.backup = backup }
 
 func (a *API) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
@@ -118,7 +123,9 @@ func (a *API) Routes() *http.ServeMux {
 		"/api/logs":                   a.handleLogs,                // GET recent logs
 		"/api/escalations":            a.handleEscalations,         // GET recent escalations
 		"/api/notices":                a.handleNotices,             // GET durable useful notices
-		"/api/events":                 a.handleSSE,                 // SSE stream
+		"/api/backup":                 a.handleBackup,
+		"/api/backup/run":             a.handleBackupRun,
+		"/api/events":                 a.handleSSE, // SSE stream
 	}
 	for path, h := range protected {
 		mux.HandleFunc(path, a.requireAuth(h))
@@ -784,6 +791,48 @@ func (a *API) handleNotices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, rows)
+}
+
+func (a *API) handleBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	var backup BackupConfig
+	if err := decodeJSON(w, r, &backup, maxJSONBody); err != nil {
+		writeErr(w, 400, "invalid body")
+		return
+	}
+	cfg, err := a.store.Update(func(c *Config) {
+		if backup.AccessKey == "" {
+			backup.AccessKey = c.Backup.AccessKey
+		}
+		if backup.SecretKey == "" {
+			backup.SecretKey = c.Backup.SecretKey
+		}
+		c.Backup = backup
+	})
+	if err != nil {
+		writeErr(w, 400, err.Error())
+		return
+	}
+	writeJSON(w, 200, redactedConfig(cfg).Backup)
+}
+
+func (a *API) handleBackupRun(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, 405, "method not allowed")
+		return
+	}
+	if a.backup == nil {
+		writeErr(w, 503, "备份服务未启用")
+		return
+	}
+	if err := a.backup.RunOnce(r.Context(), a.store.Get().Backup); err != nil {
+		writeErr(w, 502, "备份失败："+err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
 func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,8 @@ type Config struct {
 	// Jev is the TypeSafe System-One intent gate that pre-screens each message
 	// (with recent context) before it enters the packing queue.
 	Jev JevConfig `json:"jev"`
+	// Backup uploads only finalized notice shards to an S3-compatible bucket.
+	Backup BackupConfig `json:"backup"`
 
 	// Masters receive the distilled reminders (their QQ user IDs).
 	Masters []Master `json:"masters"`
@@ -67,6 +69,21 @@ type JevConfig struct {
 	Threshold float64 `json:"threshold"` // noul >= threshold ⇒ important
 	ContextN  int     `json:"contextN"`  // recent messages passed as context
 	Timeout   int     `json:"timeoutSec"`
+}
+
+// BackupConfig controls scheduled uploads. Cloudflare R2 uses the S3 API with
+// Provider="r2" and Region="auto".
+type BackupConfig struct {
+	Enabled   bool   `json:"enabled"`
+	Provider  string `json:"provider"`
+	Cron      string `json:"cron"`
+	Endpoint  string `json:"endpoint"`
+	Bucket    string `json:"bucket"`
+	Prefix    string `json:"prefix"`
+	Region    string `json:"region"`
+	AccessKey string `json:"accessKey"`
+	SecretKey string `json:"secretKey"`
+	Timeout   int    `json:"timeoutSec"`
 }
 
 type Master struct {
@@ -185,6 +202,12 @@ func defaultConfig() Config {
 			Threshold: 0.6,
 			ContextN:  6,
 			Timeout:   10,
+		},
+		Backup: BackupConfig{
+			Provider: "r2",
+			Cron:     "0 3 * * *",
+			Region:   "auto",
+			Timeout:  60,
 		},
 		Masters: []Master{},
 		Groups:  []GroupWatch{},
@@ -376,6 +399,9 @@ func validateConfig(c Config) error {
 	if err := validateJevConfig(c.Jev); err != nil {
 		return fmt.Errorf("Jev: %w", err)
 	}
+	if err := validateBackupConfig(c.Backup); err != nil {
+		return fmt.Errorf("backup: %w", err)
+	}
 	return nil
 }
 
@@ -401,6 +427,37 @@ func validateJevConfig(c JevConfig) error {
 	}
 	if c.Threshold < 0 || c.Threshold > 1 || c.ContextN < 0 || c.ContextN > maxJevContext || c.Timeout < 1 || c.Timeout > maxLLMTimeoutSec {
 		return fmt.Errorf("invalid threshold, context or timeout")
+	}
+	return nil
+}
+
+func validateBackupConfig(c BackupConfig) error {
+	if c.Provider == "" {
+		c.Provider = "r2"
+	}
+	if c.Provider != "r2" && c.Provider != "s3" {
+		return fmt.Errorf("unsupported provider")
+	}
+	if _, err := parseCron(c.Cron); err != nil {
+		return fmt.Errorf("invalid cron: %w", err)
+	}
+	if c.Endpoint != "" {
+		u, err := url.Parse(c.Endpoint)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(c.Endpoint) > maxURLBytes {
+			return fmt.Errorf("endpoint must be an HTTPS URL without credentials, query or fragment")
+		}
+	}
+	if len(c.Bucket) > 256 || len(c.Prefix) > maxURLBytes || len(c.AccessKey) > maxTokenBytes || len(c.SecretKey) > maxTokenBytes {
+		return fmt.Errorf("bucket, prefix or credentials too long")
+	}
+	if !validText(c.Bucket, 256) || strings.ContainsAny(c.Bucket, "/\\ ?#") || c.Bucket == "." || c.Bucket == ".." || !validText(c.Prefix, maxURLBytes) || strings.Contains(c.Prefix, "..") || strings.Contains(c.Prefix, "\\") || !validText(c.Region, 256) || !validText(c.AccessKey, maxTokenBytes) || !validText(c.SecretKey, maxTokenBytes) {
+		return fmt.Errorf("invalid bucket, prefix, region or credentials")
+	}
+	if c.Enabled && (c.Endpoint == "" || c.Bucket == "" || c.AccessKey == "" || c.SecretKey == "") {
+		return fmt.Errorf("enabled backup requires endpoint, bucket and credentials")
+	}
+	if c.Timeout < 1 || c.Timeout > maxLLMTimeoutSec {
+		return fmt.Errorf("invalid timeout")
 	}
 	return nil
 }

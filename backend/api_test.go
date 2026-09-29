@@ -99,7 +99,7 @@ func TestAPIConfigRedactsSecretsAndPreservesBlankUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := serveAPI(a, "GET", "/api/config", nil, cookie)
-	if w.Code != 200 || strings.Contains(w.Body.String(), "secret") || strings.Contains(w.Body.String(), "onebot-secret") {
+	if w.Code != 200 || strings.Contains(w.Body.String(), "llm-secret") || strings.Contains(w.Body.String(), "jev-secret") || strings.Contains(w.Body.String(), "onebot-secret") {
 		t.Fatalf("config leaked secret: %d %s", w.Code, w.Body.String())
 	}
 	w = serveAPI(a, "POST", "/api/llm", []byte(`{"enabled":true,"baseUrl":"https://llm.example/v1","model":"model"}`), cookie)

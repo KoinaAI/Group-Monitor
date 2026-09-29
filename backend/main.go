@@ -45,12 +45,15 @@ func main() {
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go watchConnection(rootCtx, ob, hub)
+	backup := NewBackupManager(store, notices, hub)
+	backup.Start(rootCtx)
 
 	cfg := store.Get()
 	ob.Reconfigure(cfg.OneBot)
 
 	api := NewAPI(store, ob, hub, pipe)
 	api.SetNoticeStore(notices)
+	api.SetBackupManager(backup)
 	mux := api.Routes()
 
 	srv := &http.Server{
