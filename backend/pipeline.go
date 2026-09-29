@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -590,7 +592,9 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 				Title:   "紧急消息（未经 LLM 处理）",
 				Summary: rawDigest(batch),
 			}
-			p.persistNotice(groupID, groupName, batch, res, urgent)
+			if p.active(generation, groupID) {
+				p.persistNotice(groupID, groupName, batch, res, urgent)
+			}
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		} else {
 			p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("已缓冲 %d 条，但 LLM 未启用，普通消息不推送", len(batch)))
@@ -607,7 +611,9 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
 			res = LLMResult{Useful: true, Level: 3, Title: "紧急消息（LLM 处理失败）", Summary: rawDigest(batch)}
-			p.persistNotice(groupID, groupName, batch, res, urgent)
+			if p.active(generation, groupID) {
+				p.persistNotice(groupID, groupName, batch, res, urgent)
+			}
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		}
 		return
@@ -632,7 +638,9 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("LLM 判定 %d 条为噪音已过滤：%s", len(batch), res.Reason))
 		return
 	}
-	p.persistNotice(groupID, groupName, batch, res, urgent)
+	if p.active(generation, groupID) {
+		p.persistNotice(groupID, groupName, batch, res, urgent)
+	}
 	p.escalateGeneration(groupID, groupName, res, urgent, generation)
 }
 
@@ -646,7 +654,8 @@ func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored
 		if s.msg.MessageID != 0 {
 			ids = append(ids, s.msg.MessageID)
 		}
-		sources = append(sources, NoticeSource{MessageID: s.msg.MessageID, Time: s.msg.Time, UserID: s.msg.UserID, Nickname: limitText(s.msg.Nickname, 128), JevNoul: s.jevNoul})
+		textHash := sha256.Sum256([]byte(s.msg.Text))
+		sources = append(sources, NoticeSource{MessageID: s.msg.MessageID, Time: s.msg.Time, UserID: s.msg.UserID, Nickname: limitText(s.msg.Nickname, 128), TextHash: hex.EncodeToString(textHash[:8]), JevNoul: s.jevNoul})
 	}
 	if _, err := p.notices.Append(NoticeRecord{GroupID: groupID, Group: limitText(groupName, 256), MessageIDs: ids, Sources: sources, Result: res, Urgent: urgent}); err != nil {
 		p.hub.Log("error", groupID, groupName, "正式通知入库失败："+err.Error())

@@ -21,6 +21,7 @@ type NoticeSource struct {
 	Time      int64   `json:"time"`
 	UserID    int64   `json:"userId"`
 	Nickname  string  `json:"nickname,omitempty"`
+	TextHash  string  `json:"textHash,omitempty"`
 	JevNoul   float64 `json:"jevNoul,omitempty"`
 }
 
@@ -109,7 +110,7 @@ func noticeID(groupID int64, ids []int64, sources []NoticeSource, result LLMResu
 		fmt.Fprintf(&b, "%d,", id)
 	}
 	for _, source := range sources {
-		fmt.Fprintf(&b, "%d:%d:%s:%d,", source.Time, source.UserID, source.Nickname, source.MessageID)
+		fmt.Fprintf(&b, "%d:%d:%s:%s:%d,", source.Time, source.UserID, source.Nickname, source.TextHash, source.MessageID)
 	}
 	h := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(h[:])
@@ -201,13 +202,13 @@ func (s *NoticeStore) Query(q NoticeQuery) ([]NoticeRecord, error) {
 	}
 	needle := strings.ToLower(strings.TrimSpace(q.Query))
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 	entries, err := os.ReadDir(s.dir)
+	s.mu.RUnlock()
 	if err != nil {
 		return nil, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() > entries[j].Name() })
-	out := make([]NoticeRecord, 0, q.Limit)
+	all := make([]NoticeRecord, 0)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "notices-") || !strings.HasSuffix(entry.Name(), ".jsonl") {
 			continue
@@ -226,21 +227,28 @@ func (s *NoticeStore) Query(q NoticeQuery) ([]NoticeRecord, error) {
 			}
 		}
 		_ = f.Close()
-		sort.Slice(rows, func(i, j int) bool { return rows[i].CreatedAt > rows[j].CreatedAt })
-		for _, n := range rows {
-			if q.GroupID != 0 && n.GroupID != q.GroupID || q.Before != 0 && n.CreatedAt >= q.Before {
+		all = append(all, rows...)
+	}
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].CreatedAt != all[j].CreatedAt {
+			return all[i].CreatedAt > all[j].CreatedAt
+		}
+		return all[i].ID > all[j].ID
+	})
+	out := make([]NoticeRecord, 0, q.Limit)
+	for _, n := range all {
+		if q.GroupID != 0 && n.GroupID != q.GroupID || q.Before != 0 && n.CreatedAt >= q.Before {
+			continue
+		}
+		if needle != "" {
+			hay := strings.ToLower(n.Group + " " + n.Result.Title + " " + n.Result.Summary + " " + n.Result.Event)
+			if !strings.Contains(hay, needle) {
 				continue
 			}
-			if needle != "" {
-				hay := strings.ToLower(n.Group + " " + n.Result.Title + " " + n.Result.Summary + " " + n.Result.Event)
-				if !strings.Contains(hay, needle) {
-					continue
-				}
-			}
-			out = append(out, n)
-			if len(out) >= q.Limit {
-				return out, nil
-			}
+		}
+		out = append(out, n)
+		if len(out) >= q.Limit {
+			return out, nil
 		}
 	}
 	return out, nil
