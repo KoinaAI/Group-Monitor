@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -49,5 +50,23 @@ func TestSendPrivateConcurrentBoundsAndReportsFailures(t *testing.T) {
 	}
 	if maxActive.Load() > maxNotifyWorkers {
 		t.Fatalf("worker limit exceeded: %d", maxActive.Load())
+	}
+}
+
+func TestFormatReminderIsCompactAndOmitsEmptyFields(t *testing.T) {
+	got := formatReminder("软件工程一班", LLMResult{
+		Level:   2,
+		Title:   "体检安排",
+		Time:    "周五 14:00",
+		Place:   "校医院一楼",
+		Event:   "完成体检并交表",
+		Summary: "请携带学生证。",
+	}, false)
+	want := "⚠️ 软件工程一班｜体检安排\n时间 周五 14:00 · 地点 校医院一楼\n事项 完成体检并交表\n请携带学生证。"
+	if got != want {
+		t.Fatalf("compact reminder mismatch:\n%s", got)
+	}
+	if strings.Contains(got, "截止") || strings.Contains(got, "群哨提醒") || strings.Contains(got, "━━") {
+		t.Fatalf("empty/ornamental fields leaked: %s", got)
 	}
 }

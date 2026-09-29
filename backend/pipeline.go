@@ -762,36 +762,39 @@ func formatReminder(groupName string, res LLMResult, urgent bool) string {
 	res.Event = limitText(res.Event, 512)
 	res.Deadline = limitText(res.Deadline, 256)
 	head := "🔔"
-	switch res.Level {
-	case 3:
+	if urgent || res.Level >= 3 {
 		head = "🚨"
-	case 2:
+	} else if res.Level == 2 {
 		head = "⚠️"
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s 群哨提醒 · %s\n", head, levelLabel(res.Level))
-	fmt.Fprintf(&b, "━━━━━━━━━━\n")
-	if res.Title != "" {
-		fmt.Fprintf(&b, "【%s】\n", res.Title)
+	title := res.Title
+	if title == "" {
+		title = res.Event
 	}
-	fmt.Fprintf(&b, "群聊：%s\n", groupName)
+	if title == "" {
+		title = "正式通知"
+	}
+	lines := []string{fmt.Sprintf("%s %s｜%s", head, groupName, title)}
+	meta := make([]string, 0, 3)
 	if res.Time != "" {
-		fmt.Fprintf(&b, "时间：%s\n", res.Time)
+		meta = append(meta, "时间 "+res.Time)
 	}
 	if res.Place != "" {
-		fmt.Fprintf(&b, "地点：%s\n", res.Place)
+		meta = append(meta, "地点 "+res.Place)
 	}
 	if res.Deadline != "" {
-		fmt.Fprintf(&b, "截止：%s\n", res.Deadline)
+		meta = append(meta, "截止 "+res.Deadline)
 	}
-	if res.Event != "" {
-		fmt.Fprintf(&b, "事件：%s\n", res.Event)
+	if len(meta) > 0 {
+		lines = append(lines, strings.Join(meta, " · "))
+	}
+	if res.Event != "" && res.Event != title {
+		lines = append(lines, "事项 "+res.Event)
 	}
 	if res.Summary != "" {
-		fmt.Fprintf(&b, "──────────\n%s\n", res.Summary)
+		lines = append(lines, res.Summary)
 	}
-	fmt.Fprintf(&b, "━━━━━━━━━━\n⏱ %s", time.Now().Format("2006-01-02 15:04"))
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
 func limitText(s string, max int) string {
