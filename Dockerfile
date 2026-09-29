@@ -26,6 +26,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldfl
 FROM nginx:1.27-alpine
 
 RUN apk add --no-cache ca-certificates
+LABEL org.opencontainers.image.source="https://github.com/KoinaAI/Group-Monitor"
 COPY --from=frontend-build /src/frontend/dist/ /usr/share/nginx/html/
 COPY --from=backend-build /out/napnotifier /usr/local/bin/napnotifier
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
