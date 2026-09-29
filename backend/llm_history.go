@@ -215,7 +215,7 @@ func executeNoticeSearch(ctx context.Context, store *NoticeStore, groupID int64,
 	}{Notices: make([]historyNotice, 0, len(records))}
 	for _, n := range records {
 		notice := historyNotice{
-			ID: limitText(n.ID, 80), CreatedAt: n.CreatedAt, RecordedAt: time.UnixMilli(n.CreatedAt).In(time.Local).Format(time.RFC3339),
+			ID: limitText(n.ID, 80), CreatedAt: n.CreatedAt, RecordedAt: time.UnixMilli(n.CreatedAt).In(messageTimeZone).Format(time.RFC3339),
 			Title: limitText(n.Result.Title, 160), Summary: limitText(n.Result.Summary, 1600),
 			Time: limitText(n.Result.Time, 160), Place: limitText(n.Result.Place, 240), Event: limitText(n.Result.Event, 320), Deadline: limitText(n.Result.Deadline, 160),
 		}

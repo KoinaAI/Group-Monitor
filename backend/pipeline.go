@@ -771,12 +771,12 @@ func (p *Pipeline) escalateGeneration(groupID int64, groupName string, res LLMRe
 
 func buildTranscript(groupName string, batch []scored) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "群聊：%s\n消息条数：%d\n\n", limitText(groupName, 256), len(batch))
+	fmt.Fprintf(&b, "当前北京时间：%s\n群聊：%s\n消息条数：%d\n相对日期以各消息的原始日期为准；时间未知时不要猜测。\n\n", messageTimestamp(time.Now().Unix()), limitText(groupName, 256), len(batch))
 	for _, s := range batch {
 		if b.Len() >= maxTranscriptBytes-13000 {
 			break
 		}
-		t := time.Unix(s.msg.Time, 0).Format("15:04:05")
+		t := messageTimestamp(s.msg.Time)
 		tag := ""
 		if s.senderLevel >= LvlAdmin {
 			tag = "★"
