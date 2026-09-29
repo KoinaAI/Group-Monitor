@@ -44,7 +44,7 @@ export function JevForm({ initial }: { initial: JevConfig }) {
   return (
     <SectionCard
       title="Jev 意图门控"
-      description="在蒸馏前判定聚合内容是否值得升级（失败时放行）"
+      description="逐条预筛消息，并在归档前确认正式通知；判定失败时不写入归档"
       actions={
         <>
           <Button variant="secondary" onPress={test} isPending={testing}>
@@ -61,7 +61,7 @@ export function JevForm({ initial }: { initial: JevConfig }) {
       <div className="flex flex-col gap-4">
         <Toggle
           label="启用意图门控"
-          description="关闭后所有聚合内容都进入蒸馏"
+          description="关闭或未配置密钥时可继续推送，但暂停通知归档"
           isSelected={jev.enabled}
           onChange={(v) => set({ enabled: v })}
         />
@@ -104,7 +104,7 @@ export function JevForm({ initial }: { initial: JevConfig }) {
             value={jev.contextN}
             onChange={(v) => set({ contextN: v })}
             minValue={0}
-            maxValue={50}
+            maxValue={20}
           />
           <NumberSetting
             label="超时（秒）"

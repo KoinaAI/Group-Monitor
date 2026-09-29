@@ -24,6 +24,7 @@ export const NAV: NavSection[] = [
     items: [
       { label: '总览', to: '/', icon: 'overview', hint: '运行状态与实时动态' },
       { label: '群组', to: '/groups', icon: 'groups', hint: '监听群与聊天记录' },
+      { label: '通知归档', to: '/notices', icon: 'fileText', hint: '检索已保留的正式通知' },
       { label: '日志', to: '/logs', icon: 'logs', hint: '流水与升级事件' },
     ],
   },
@@ -33,6 +34,7 @@ export const NAV: NavSection[] = [
       { label: '主人', to: '/masters', icon: 'masters', hint: '通知接收人与等级' },
       { label: '规则', to: '/rules', icon: 'rules', hint: '静默窗口与升级条件' },
       { label: '智能', to: '/intelligence', icon: 'intelligence', hint: 'LLM 提炼与意图闸门' },
+      { label: '存储', to: '/storage', icon: 'download', hint: '定期备份通知归档' },
       { label: '连接', to: '/connection', icon: 'connection', hint: 'OneBot 接入' },
     ],
   },

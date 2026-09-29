@@ -1,6 +1,9 @@
 import type {
   AuthStatus,
+  BackupConfig,
+  BackupStatus,
   Config,
+  DocumentConfig,
   EscalationEvent,
   GroupRow,
   GroupWatch,
@@ -12,6 +15,7 @@ import type {
   LogEntry,
   Master,
   MasterKind,
+  NoticeRecord,
   OneBotConfig,
   Rules,
   StatusResponse,
@@ -158,6 +162,26 @@ export const api = {
   jev: {
     save: (jev: JevConfig) => post<JevConfig>('/jev', jev),
     test: (jev: JevConfig) => post<JevTestResponse>('/jev/test', jev),
+  },
+
+  backup: {
+    save: (backup: BackupConfig) => post<BackupConfig>('/backup', backup),
+    run: () => post<{ ok: boolean }>('/backup/run'),
+    status: () => get<BackupStatus>('/backup/status'),
+  },
+
+  documents: {
+    save: (documents: DocumentConfig) => post<DocumentConfig>('/documents', documents),
+  },
+
+  notices: (options: { groupId?: number; q?: string; limit?: number; before?: number; beforeId?: string } = {}) => {
+    const params = new URLSearchParams()
+    if (options.groupId) params.set('groupId', String(options.groupId))
+    if (options.q) params.set('q', options.q)
+    if (options.limit) params.set('limit', String(options.limit))
+    if (options.before) params.set('before', String(options.before))
+    if (options.beforeId) params.set('beforeId', options.beforeId)
+    return get<NoticeRecord[]>(`/notices?${params}`)
   },
 
   onebot: { save: (onebot: OneBotConfig) => post<OneBotConfig>('/onebot', onebot) },

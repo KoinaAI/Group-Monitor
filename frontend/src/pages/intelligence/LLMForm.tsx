@@ -63,7 +63,7 @@ export function LLMForm({ initial }: { initial: LLMConfig }) {
       <div className="flex flex-col gap-4">
         <Toggle
           label="启用 LLM 蒸馏"
-          description="关闭后直接转发原始聚合内容"
+          description="关闭后仅推送紧急原文；正式通知仍可经 Jev 判断后归档"
           isSelected={llm.enabled}
           onChange={(v) => set({ enabled: v })}
         />

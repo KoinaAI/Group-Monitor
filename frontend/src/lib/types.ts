@@ -35,6 +35,37 @@ export interface JevConfig {
   timeoutSec: number
 }
 
+export interface BackupConfig {
+  enabled: boolean
+  provider: 'r2' | 's3'
+  cron: string
+  endpoint: string
+  bucket: string
+  prefix: string
+  region: string
+  accessKey: string
+  secretKey: string
+  timeoutSec: number
+}
+
+export interface BackupStatus {
+  running: boolean
+  lastRun: number
+  lastSuccess: number
+  lastError: string
+  filesUploaded: number
+  nextRun?: number
+}
+
+export interface DocumentConfig {
+  enabled: boolean
+  baseUrl: string
+  apiKey: string
+  timeoutSec: number
+  maxFileMB: number
+  maxTextChars: number
+}
+
 // MasterKind gates privilege: 'full' (default) receives escalations AND is a
 // login-OTP recipient; 'notify' is notify-only — a sharing target that still
 // gets pushes but has no login path. Absent kind means full.
@@ -72,6 +103,8 @@ export interface Config {
   onebot: OneBotConfig
   llm: LLMConfig
   jev: JevConfig
+  backup: BackupConfig
+  documents: DocumentConfig
   masters: Master[]
   groups: GroupWatch[]
   rules: Rules
@@ -166,6 +199,17 @@ export interface LLMResult {
   event: string
   deadline: string
   reason: string
+}
+
+export interface NoticeRecord {
+  id: string
+  createdAt: number
+  groupId: number
+  group: string
+  messageIds?: number[]
+  sources?: { messageId?: number; time: number; userId: number; nickname?: string }[]
+  result: LLMResult
+  urgent: boolean
 }
 export interface LLMTestResponse {
   ok: boolean

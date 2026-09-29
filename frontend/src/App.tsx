@@ -23,6 +23,8 @@ const Masters = lazy(() => import('./pages/Masters'))
 const Rules = lazy(() => import('./pages/Rules'))
 const Intelligence = lazy(() => import('./pages/Intelligence'))
 const Connection = lazy(() => import('./pages/Connection'))
+const Storage = lazy(() => import('./pages/Storage'))
+const Notices = lazy(() => import('./pages/Notices'))
 
 // Let react-aria's RouterProvider carry react-router's navigate options so
 // HeroUI links/sidebar items type-check with `routerOptions` (documented
@@ -51,10 +53,12 @@ export default function App() {
           <Route path="/groups" element={<Groups />} />
           <Route path="/groups/:groupId/history" element={<GroupHistory />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/notices" element={<Notices />} />
           <Route path="/masters" element={<Masters />} />
           <Route path="/rules" element={<Rules />} />
           <Route path="/intelligence" element={<Intelligence />} />
           <Route path="/connection" element={<Connection />} />
+          <Route path="/storage" element={<Storage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
