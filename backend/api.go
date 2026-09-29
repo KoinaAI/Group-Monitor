@@ -323,7 +323,11 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request) {
 	if rng := r.Header.Get("Range"); rng != "" {
 		req.Header.Set("Range", rng)
 	}
-	resp, err := a.ob.client.Do(req)
+	// Do not follow redirects from a URL supplied by a history segment. A QQ
+	// host could otherwise redirect this server to a private network address.
+	client := *a.ob.client
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Do(req)
 	if err != nil {
 		writeErr(w, 502, "媒体获取失败："+err.Error())
 		return

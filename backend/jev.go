@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"time"
 )
@@ -93,6 +94,9 @@ func jevImportance(cfg JevConfig, state any) (float64, error) {
 	a, ok := jr.Answers["important"]
 	if !ok {
 		return 0, fmt.Errorf("jev returned no 'important' answer: %s", truncate(string(raw), 200))
+	}
+	if math.IsNaN(a.Noul) || a.Noul < 0 || a.Noul > 1 {
+		return 0, fmt.Errorf("jev noul out of range: %v", a.Noul)
 	}
 	return a.Noul, nil
 }

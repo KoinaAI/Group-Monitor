@@ -38,6 +38,7 @@ type OneBot struct {
 
 	cancel context.CancelFunc
 	genMu  sync.Mutex // serialises cancel swaps across reconfigures
+	gen    uint64
 }
 
 // GroupMessage is the normalised form of an OneBot group message event.
@@ -66,24 +67,35 @@ func (o *OneBot) SelfID() int64   { return o.selfID.Load() }
 // Reconfigure points the client at (possibly new) endpoints and restarts the
 // WebSocket loop.
 func (o *OneBot) Reconfigure(c OneBotConfig) {
+	o.genMu.Lock()
 	o.mu.Lock()
 	o.httpBase = strings.TrimRight(c.HTTPBase, "/")
 	o.wsURL = c.WSURL
 	o.token = c.Token
 	o.mu.Unlock()
 
-	o.genMu.Lock()
 	if o.cancel != nil {
 		o.cancel()
 	}
+	o.gen++
+	gen := o.gen
+	o.connected.Store(false)
 	ctx, cancel := context.WithCancel(context.Background())
 	o.cancel = cancel
 	o.genMu.Unlock()
 
-	go o.runWS(ctx)
+	go o.runWS(ctx, gen)
 }
 
-func (o *OneBot) runWS(ctx context.Context) {
+func (o *OneBot) setConnected(gen uint64, connected bool) {
+	o.genMu.Lock()
+	if o.gen == gen {
+		o.connected.Store(connected)
+	}
+	o.genMu.Unlock()
+}
+
+func (o *OneBot) runWS(ctx context.Context, gen uint64) {
 	backoff := time.Second
 	for {
 		select {
@@ -91,9 +103,11 @@ func (o *OneBot) runWS(ctx context.Context) {
 			return
 		default:
 		}
-		if err := o.dialAndRead(ctx); err != nil {
-			o.connected.Store(false)
-			log.Printf("[onebot] ws disconnected: %v (retry in %s)", err, backoff)
+		if err := o.dialAndRead(ctx, gen); err != nil {
+			o.setConnected(gen, false)
+			if ctx.Err() == nil {
+				log.Printf("[onebot] ws disconnected: %v (retry in %s)", err, backoff)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -106,7 +120,7 @@ func (o *OneBot) runWS(ctx context.Context) {
 	}
 }
 
-func (o *OneBot) dialAndRead(ctx context.Context) error {
+func (o *OneBot) dialAndRead(ctx context.Context, gen uint64) error {
 	o.mu.RLock()
 	url, token := o.wsURL, o.token
 	o.mu.RUnlock()
@@ -124,7 +138,10 @@ func (o *OneBot) dialAndRead(ctx context.Context) error {
 		return err
 	}
 	defer conn.Close()
-	o.connected.Store(true)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	o.setConnected(gen, true)
 	log.Printf("[onebot] ws connected to %s", url)
 
 	// Close the socket when the context is cancelled (reconfigure/shutdown).
@@ -156,7 +173,9 @@ func (o *OneBot) dialAndRead(ctx context.Context) error {
 			return err
 		}
 		conn.SetReadDeadline(time.Now().Add(readWait))
-		o.handleFrame(data)
+		if ctx.Err() == nil {
+			o.handleFrame(data)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"sync"
 )
 
@@ -186,7 +187,7 @@ func NewStore(path string) (*Store, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			s.cfg = defaultConfig()
-			return s, s.save()
+			return s, s.save(s.cfg)
 		}
 		return nil, err
 	}
@@ -202,23 +203,34 @@ func NewStore(path string) (*Store, error) {
 func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cfg
+	return cloneConfig(s.cfg)
 }
 
-// Update applies fn to a copy under lock, persists, and returns the new config.
+// Update persists a private copy before publishing it to readers. A failed
+// write must leave the in-memory configuration consistent with the file.
 func (s *Store) Update(fn func(*Config)) (Config, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	fn(&s.cfg)
-	if err := s.save(); err != nil {
-		return s.cfg, err
+	next := cloneConfig(s.cfg)
+	fn(&next)
+	if err := s.save(next); err != nil {
+		return cloneConfig(s.cfg), err
 	}
-	return s.cfg, nil
+	s.cfg = next
+	return cloneConfig(next), nil
 }
 
-func (s *Store) save() error {
+func cloneConfig(c Config) Config {
+	c.Masters = slices.Clone(c.Masters)
+	c.Groups = slices.Clone(c.Groups)
+	c.Rules.UrgentKeywords = slices.Clone(c.Rules.UrgentKeywords)
+	c.Rules.SenderOverrides = slices.Clone(c.Rules.SenderOverrides)
+	return c
+}
+
+func (s *Store) save(cfg Config) error {
 	tmp := s.path + ".tmp"
-	b, err := json.MarshalIndent(s.cfg, "", "  ")
+	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}

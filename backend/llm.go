@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -154,6 +153,14 @@ func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
 		return res, "", err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		var upstream chatResp
+		if json.Unmarshal(raw, &upstream) == nil && upstream.Error != nil {
+			return res, "", fmt.Errorf("LLM %d: %s", resp.StatusCode, upstream.Error.Message)
+		}
+		return res, "", fmt.Errorf("LLM %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
 
 	var content string
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
@@ -221,8 +228,6 @@ func readSSEContent(r io.Reader) (string, error) {
 	return sb.String(), nil
 }
 
-var jsonBlock = regexp.MustCompile(`(?s)\{.*\}`)
-
 // parseVerdict extracts the JSON object from a model reply that may be wrapped
 // in prose or ```json fences.
 func parseVerdict(content string) (LLMResult, error) {
@@ -234,10 +239,16 @@ func parseVerdict(content string) (LLMResult, error) {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(s)), &res); err == nil {
 		return res, nil
 	}
-	// Fall back to grabbing the first {...} span.
-	if m := jsonBlock.FindString(content); m != "" {
-		if err := json.Unmarshal([]byte(m), &res); err == nil {
-			return res, nil
+	// Decode from each opening brace. Decoder stops after the first complete
+	// object, so explanatory text or a second object cannot make the first
+	// verdict invalid.
+	for i := 0; i < len(content); i++ {
+		if content[i] != '{' {
+			continue
+		}
+		candidate := LLMResult{}
+		if err := json.NewDecoder(strings.NewReader(content[i:])).Decode(&candidate); err == nil {
+			return candidate, nil
 		}
 	}
 	return res, fmt.Errorf("could not parse JSON verdict from: %s", truncate(content, 200))
