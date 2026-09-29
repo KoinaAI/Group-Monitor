@@ -56,6 +56,22 @@ func jevImportance(cfg JevConfig, state any) (float64, error) {
 }
 
 func jevImportanceContext(ctx context.Context, cfg JevConfig, state any) (float64, error) {
+	return jevScoreContext(ctx, cfg, state, jevQuestion)
+}
+
+// Archiving has stricter semantics than urgent delivery: keywords and outage
+// fallbacks must never turn unclassified chatter into permanent history.
+func jevNoticeContext(ctx context.Context, cfg JevConfig, state any) (float64, error) {
+	return jevScoreContext(ctx, cfg, state, "判断当前消息块是否包含正式通知或对学生有用的具体安排、待办、截止、变更。忽略附和、吹水、广告、仅因紧急词或@触发的闲聊。只评判当前原始消息及文件内容，不把历史参考或自动生成的摘要当作新通知。")
+}
+
+func jevScoreContext(parent context.Context, cfg JevConfig, state any, question string) (float64, error) {
+	to := cfg.Timeout
+	if to <= 0 {
+		to = 10
+	}
+	ctx, cancel := context.WithTimeout(parent, time.Duration(to)*time.Second)
+	defer cancel()
 	if cfg.BaseURL == "" {
 		return 0, fmt.Errorf("no jev endpoint configured")
 	}
@@ -73,7 +89,7 @@ func jevImportanceContext(ctx context.Context, cfg JevConfig, state any) (float6
 		Questions: map[string]jevQuestionBody{
 			"important": {
 				Type:         "noul",
-				Instructions: map[string]any{"question": jevQuestion},
+				Instructions: map[string]any{"question": question},
 				Criteria:     map[string]any{"true": jevTrueDesc, "false": jevFalseDesc},
 			},
 		},

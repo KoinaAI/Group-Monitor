@@ -593,7 +593,7 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 				Summary: rawDigest(batch),
 			}
 			if p.active(generation, groupID) {
-				p.persistNotice(groupID, groupName, batch, res, urgent)
+				p.persistNotice(groupID, groupName, batch, res, urgent, generation)
 			}
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		} else {
@@ -612,7 +612,7 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		if urgent {
 			res = LLMResult{Useful: true, Level: 3, Title: "紧急消息（LLM 处理失败）", Summary: rawDigest(batch)}
 			if p.active(generation, groupID) {
-				p.persistNotice(groupID, groupName, batch, res, urgent)
+				p.persistNotice(groupID, groupName, batch, res, urgent, generation)
 			}
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		}
@@ -639,13 +639,26 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		return
 	}
 	if p.active(generation, groupID) {
-		p.persistNotice(groupID, groupName, batch, res, urgent)
+		p.persistNotice(groupID, groupName, batch, res, urgent, generation)
 	}
 	p.escalateGeneration(groupID, groupName, res, urgent, generation)
 }
 
-func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored, res LLMResult, urgent bool) {
+func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored, res LLMResult, urgent bool, generation uint64) {
 	if p.notices == nil || len(batch) == 0 {
+		return
+	}
+	cfg := p.store.Get()
+	if !cfg.Jev.Enabled || cfg.Jev.APIKey == "" {
+		p.hub.Log("info", groupID, groupName, "未配置 Jev，通知仅实时推送，暂不入库")
+		return
+	}
+	score, err := jevNoticeContext(p.ctx, cfg.Jev, map[string]any{"group": groupName, "current": buildTranscript(groupName, batch)})
+	if err != nil {
+		p.hub.Log("error", groupID, groupName, "Jev 归档判定失败，暂不入库："+err.Error())
+		return
+	}
+	if score < cfg.Jev.Threshold || !p.active(generation, groupID) {
 		return
 	}
 	ids := make([]int64, 0, len(batch))

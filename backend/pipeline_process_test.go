@@ -19,6 +19,13 @@ func TestPipelineLLMVerdictAndMasterThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	pipe.SetNoticeStore(notices)
+	jev := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"answers":{"important":{"type":"noul","noul":0.9}}}`)
+	}))
+	defer jev.Close()
+	if _, err := store.Update(func(c *Config) { c.Jev.Enabled = true; c.Jev.APIKey = "test"; c.Jev.BaseURL = jev.URL }); err != nil {
+		t.Fatal(err)
+	}
 	a := NewAPI(store, pipe.ob, pipe.hub, pipe)
 	f := newOneBotFixture(t, a)
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -139,5 +146,42 @@ func TestPipelineJevContextAndSelfMessage(t *testing.T) {
 	}
 	if got := jevContextN(Config{Jev: JevConfig{ContextN: 99}}); got != 20 {
 		t.Fatalf("context cap=%d", got)
+	}
+}
+
+func TestArchiveRequiresSuccessfulJevNoticeVerdict(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		score  float64
+		key    string
+		want   int
+	}{
+		{"chatter", 200, 0.1, "key", 0},
+		{"outage", 502, 0, "key", 0},
+		{"unconfigured", 200, 0.9, "", 0},
+		{"notice", 200, 0.9, "key", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				fmt.Fprintf(w, `{"answers":{"important":{"type":"noul","noul":%f}}}`, tc.score)
+			}))
+			defer srv.Close()
+			pipe, store := testPipe(t, func(c *Config) { c.Jev.Enabled = true; c.Jev.BaseURL = srv.URL; c.Jev.APIKey = tc.key })
+			defer pipe.Shutdown()
+			notices, err := NewNoticeStore(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			pipe.SetNoticeStore(notices)
+			cfg := store.Get()
+			// A keyword-triggered urgent fallback is not by itself an archive verdict.
+			pipe.process(cfg, 100, "班群", []scored{classify(&cfg, msg(100, 7, "member", "紧急：内容待判定"))}, true)
+			rows, err := notices.Query(NoticeQuery{GroupID: 100})
+			if err != nil || len(rows) != tc.want {
+				t.Fatalf("rows=%v err=%v", rows, err)
+			}
+		})
 	}
 }
