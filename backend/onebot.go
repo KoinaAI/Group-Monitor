@@ -36,8 +36,9 @@ type OneBot struct {
 	connected atomic.Bool
 	selfID    atomic.Int64
 
-	onEvent func(GroupMessage) // pipeline hook
-	onRaw   func(map[string]any)
+	onEvent   func(GroupMessage)   // pipeline hook
+	onPrivate func(PrivateMessage) // bounded assistant admission hook
+	onRaw     func(map[string]any)
 
 	// lastLogin caches the most recent successful get_login_info so /api/status
 	// can report the account without a blocking round-trip on every poll.
@@ -248,6 +249,16 @@ func (o *OneBot) handleFrameForGeneration(data []byte, gen uint64) {
 	if raw["post_type"] != "message" {
 		return
 	}
+	if raw["message_type"] == "private" {
+		pm := parsePrivateMessage(raw, o.SelfID())
+		if pm.MessageID != 0 && o.seenMessage(pm.MessageID) {
+			return
+		}
+		if o.onPrivate != nil {
+			o.onPrivate(pm)
+		}
+		return
+	}
 	if raw["message_type"] != "group" {
 		return
 	}
@@ -324,6 +335,18 @@ func parseGroupMessage(raw map[string]any, selfID int64) GroupMessage {
 	}
 	gm.Files = extractFiles(raw["message"])
 	return gm
+}
+
+func parsePrivateMessage(raw map[string]any, selfID int64) PrivateMessage {
+	pm := PrivateMessage{Time: toInt64(raw["time"]), UserID: toInt64(raw["user_id"]), MessageID: toInt64(raw["message_id"])}
+	if sender, ok := raw["sender"].(map[string]any); ok {
+		pm.Nickname = toStr(sender["nickname"])
+	}
+	pm.Text, _, _, _ = flattenMessage(raw["message"], selfID)
+	if raw["message"] == nil {
+		pm.Text = unpackTextLimit(toStr(raw["raw_message"]), maxUnpackedBytes)
+	}
+	return pm
 }
 
 // flattenMessage renders the OneBot "array" message format (and the string
@@ -460,8 +483,9 @@ func (o *OneBot) SendPrivateMsg(userID int64, text string) error {
 
 func (o *OneBot) SendPrivateMsgContext(ctx context.Context, userID int64, text string) error {
 	_, err := o.callContext(ctx, "send_private_msg", map[string]any{
-		"user_id": userID,
-		"message": text,
+		"user_id":     userID,
+		"message":     text,
+		"auto_escape": true, // model/user text must never execute CQ segments
 	})
 	return err
 }

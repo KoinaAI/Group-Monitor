@@ -38,9 +38,12 @@ func main() {
 	pipe.SetNoticeStore(notices)
 	defer pipe.Shutdown()
 	defer ob.Shutdown()
+	assistant := NewAssistant(store, ob, hub, notices)
+	defer assistant.Shutdown()
 
 	// Wire OneBot events into the pipeline.
 	ob.onEvent = pipe.Ingest
+	ob.onPrivate = func(pm PrivateMessage) { assistant.Submit(pm) }
 	// Track connection transitions for the live status.
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -78,6 +81,7 @@ func main() {
 			_ = srv.Close()
 		}
 		cancel()
+		assistant.Shutdown()
 		pipe.Shutdown()
 		ob.Shutdown()
 		<-serverErr
