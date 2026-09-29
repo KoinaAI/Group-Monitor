@@ -112,3 +112,21 @@ func TestGroupWatchAndMasterPrivilege(t *testing.T) {
 		t.Fatalf("full masters = %d, want 2", got)
 	}
 }
+
+func TestStoreRejectsInvalidConfigValues(t *testing.T) {
+	s, err := NewStore(filepath.Join(t.TempDir(), "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Update(func(c *Config) {
+		c.Groups = []GroupWatch{{GroupID: 1, Watch: true}, {GroupID: 1, Watch: false}}
+	}); err == nil {
+		t.Fatal("duplicate groups must be rejected")
+	}
+	if _, err := s.Update(func(c *Config) { c.Jev.Threshold = 2 }); err == nil {
+		t.Fatal("out-of-range Jev threshold must be rejected")
+	}
+	if _, err := s.Update(func(c *Config) { c.Masters = []Master{{UserID: 1}, {UserID: 1}} }); err == nil {
+		t.Fatal("duplicate masters must be rejected")
+	}
+}

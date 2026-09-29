@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"crypto/subtle"
-	"encoding/json"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -120,7 +119,7 @@ func (a *API) handleOtpVerify(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, maxAuthBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -185,7 +184,7 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, maxAuthBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -258,7 +257,7 @@ func (a *API) handleMasterVerifyRequest(w http.ResponseWriter, r *http.Request) 
 	var body struct {
 		UserID int64 `json:"userId"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID <= 0 {
+	if err := decodeJSON(w, r, &body, maxAuthBody); err != nil || body.UserID <= 0 {
 		writeErr(w, 400, "invalid userId")
 		return
 	}
@@ -323,7 +322,7 @@ func (a *API) handleMasterVerifyConfirm(w http.ResponseWriter, r *http.Request) 
 		MinLevel int    `json:"minLevel"`
 		Kind     string `json:"kind"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, maxAuthBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}

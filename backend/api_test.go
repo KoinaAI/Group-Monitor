@@ -87,6 +87,27 @@ func TestAPIConfigRoundTripAndValidation(t *testing.T) {
 	}
 }
 
+func TestAPIConfigRedactsSecretsAndPreservesBlankUpdates(t *testing.T) {
+	a := newTestAPI(t)
+	cookie := sessionCookieFor(t, a)
+	_, err := a.store.Update(func(c *Config) {
+		c.OneBot.Token = "onebot-secret"
+		c.LLM = LLMConfig{Enabled: true, BaseURL: "https://llm.example/v1", APIKey: "llm-secret", Model: "model", Timeout: 60, MaxTok: 4096, Temp: 0.2}
+		c.Jev.APIKey = "jev-secret"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := serveAPI(a, "GET", "/api/config", nil, cookie)
+	if w.Code != 200 || strings.Contains(w.Body.String(), "secret") || strings.Contains(w.Body.String(), "onebot-secret") {
+		t.Fatalf("config leaked secret: %d %s", w.Code, w.Body.String())
+	}
+	w = serveAPI(a, "POST", "/api/llm", []byte(`{"enabled":true,"baseUrl":"https://llm.example/v1","model":"model"}`), cookie)
+	if w.Code != 200 || a.store.Get().LLM.APIKey != "llm-secret" {
+		t.Fatalf("blank key did not preserve secret: %d %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAPIStatusLogsAndEscalations(t *testing.T) {
 	a := newTestAPI(t)
 	cookie := sessionCookieFor(t, a)

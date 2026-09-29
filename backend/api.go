@@ -27,6 +27,38 @@ type API struct {
 	password string // break-glass password from NAP_PASSWORD; "" disables it
 }
 
+const (
+	maxJSONBody = 1 << 20
+	maxAuthBody = 64 << 10
+)
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	if limit <= 0 {
+		limit = maxJSONBody
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(dst); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
+}
+
+func redactedConfig(c Config) Config {
+	c = cloneConfig(c)
+	c.OneBot.Token = ""
+	c.LLM.APIKey = ""
+	c.Jev.APIKey = ""
+	return c
+}
+
 func NewAPI(store *Store, ob *OneBot, hub *Hub, pipe *Pipeline) *API {
 	ttl := defaultSessTTL
 	if h := os.Getenv("NAP_SESSION_HOURS"); h != "" {
@@ -124,9 +156,9 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) handleConfig(w http.ResponseWriter, r *http.Request) {
-	// Full config (used by the UI to populate all forms). API keys are returned
-	// so the settings form round-trips; this API is intended to bind locally.
-	writeJSON(w, 200, a.store.Get())
+	// Secrets are write-only. Empty values sent by the UI preserve the existing
+	// secret, so a redacted config can still round-trip through the forms.
+	writeJSON(w, 200, redactedConfig(a.store.Get()))
 }
 
 func (a *API) handleGroups(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +194,7 @@ func (a *API) handleWatch(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Groups []GroupWatch `json:"groups"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -409,7 +441,7 @@ func (a *API) handleMasters(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Masters []Master `json:"masters"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -428,7 +460,7 @@ func (a *API) handleRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rules Rules
-	if err := json.NewDecoder(r.Body).Decode(&rules); err != nil {
+	if err := decodeJSON(w, r, &rules, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -447,17 +479,31 @@ func (a *API) handleLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var llm LLMConfig
-	if err := json.NewDecoder(r.Body).Decode(&llm); err != nil {
+	if err := decodeJSON(w, r, &llm, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
-	cfg, err := a.store.Update(func(c *Config) { c.LLM = llm })
+	cfg, err := a.store.Update(func(c *Config) {
+		if llm.APIKey == "" {
+			llm.APIKey = c.LLM.APIKey
+		}
+		if llm.Timeout <= 0 {
+			llm.Timeout = c.LLM.Timeout
+		}
+		if llm.MaxTok <= 0 {
+			llm.MaxTok = c.LLM.MaxTok
+		}
+		if llm.Model == "" {
+			llm.Model = c.LLM.Model
+		}
+		c.LLM = llm
+	})
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
 	a.broadcastStatus()
-	writeJSON(w, 200, cfg.LLM)
+	writeJSON(w, 200, redactedConfig(cfg).LLM)
 }
 
 func (a *API) handleLLMTest(w http.ResponseWriter, r *http.Request) {
@@ -466,7 +512,7 @@ func (a *API) handleLLMTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var llm LLMConfig
-	if err := json.NewDecoder(r.Body).Decode(&llm); err != nil {
+	if err := decodeJSON(w, r, &llm, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -488,17 +534,28 @@ func (a *API) handleJev(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var jev JevConfig
-	if err := json.NewDecoder(r.Body).Decode(&jev); err != nil {
+	if err := decodeJSON(w, r, &jev, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
-	cfg, err := a.store.Update(func(c *Config) { c.Jev = jev })
+	cfg, err := a.store.Update(func(c *Config) {
+		if jev.APIKey == "" {
+			jev.APIKey = c.Jev.APIKey
+		}
+		if jev.Timeout <= 0 {
+			jev.Timeout = c.Jev.Timeout
+		}
+		if jev.Model == "" {
+			jev.Model = c.Jev.Model
+		}
+		c.Jev = jev
+	})
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
 	a.broadcastStatus()
-	writeJSON(w, 200, cfg.Jev)
+	writeJSON(w, 200, redactedConfig(cfg).Jev)
 }
 
 func (a *API) handleJevTest(w http.ResponseWriter, r *http.Request) {
@@ -507,7 +564,7 @@ func (a *API) handleJevTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var jev JevConfig
-	if err := json.NewDecoder(r.Body).Decode(&jev); err != nil {
+	if err := decodeJSON(w, r, &jev, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
@@ -551,17 +608,22 @@ func (a *API) handleOneBotConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var obc OneBotConfig
-	if err := json.NewDecoder(r.Body).Decode(&obc); err != nil {
+	if err := decodeJSON(w, r, &obc, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}
-	cfg, err := a.store.Update(func(c *Config) { c.OneBot = obc })
+	cfg, err := a.store.Update(func(c *Config) {
+		if obc.Token == "" {
+			obc.Token = c.OneBot.Token
+		}
+		c.OneBot = obc
+	})
 	if err != nil {
 		writeErr(w, 500, err.Error())
 		return
 	}
 	a.ob.Reconfigure(cfg.OneBot)
-	writeJSON(w, 200, cfg.OneBot)
+	writeJSON(w, 200, redactedConfig(cfg).OneBot)
 }
 
 func (a *API) handleEnabled(w http.ResponseWriter, r *http.Request) {
@@ -572,7 +634,7 @@ func (a *API) handleEnabled(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Enabled bool `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := decodeJSON(w, r, &body, maxJSONBody); err != nil {
 		writeErr(w, 400, "invalid body")
 		return
 	}

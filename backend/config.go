@@ -2,8 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 )
 
@@ -137,12 +140,28 @@ type Store struct {
 	cfg  Config
 }
 
+const (
+	maxGroups          = 1000
+	maxMasters         = 100
+	maxSenderOverrides = 1000
+	maxUrgentKeywords  = 100
+	maxKeywordBytes    = 256
+	maxTextBytes       = 4096
+	maxModelBytes      = 256
+	maxTokenBytes      = 4096
+	maxURLBytes        = 2048
+	maxLLMTimeoutSec   = 120
+	maxJevContext      = 20
+	maxQuietWindowSec  = 24 * 60 * 60
+	maxHoldSec         = 7 * 24 * 60 * 60
+)
+
 func defaultConfig() Config {
 	return Config{
 		OneBot: OneBotConfig{
 			HTTPBase: "http://172.17.0.2:3100",
 			WSURL:    "ws://172.17.0.2:3101",
-			Token:    "agn-onebot-token-2026",
+			Token:    "",
 		},
 		LLM: LLMConfig{
 			Enabled: false,
@@ -197,6 +216,9 @@ func NewStore(path string) (*Store, error) {
 	if err := json.Unmarshal(b, &s.cfg); err != nil {
 		return nil, err
 	}
+	if err := validateConfig(s.cfg); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	return s, nil
 }
 
@@ -213,6 +235,9 @@ func (s *Store) Update(fn func(*Config)) (Config, error) {
 	defer s.mu.Unlock()
 	next := cloneConfig(s.cfg)
 	fn(&next)
+	if err := validateConfig(next); err != nil {
+		return cloneConfig(s.cfg), err
+	}
 	if err := s.save(next); err != nil {
 		return cloneConfig(s.cfg), err
 	}
@@ -257,4 +282,125 @@ func (c *Config) overrideFor(userID int64) (SenderOverride, bool) {
 		}
 	}
 	return SenderOverride{}, false
+}
+
+func validURL(raw string, schemes ...string) bool {
+	if raw == "" || len(raw) > maxURLBytes {
+		return raw == ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	for _, scheme := range schemes {
+		if strings.EqualFold(u.Scheme, scheme) {
+			return true
+		}
+	}
+	return false
+}
+
+func validText(s string, max int) bool {
+	return len(s) <= max && !strings.ContainsAny(s, "\x00\r\n")
+}
+
+// validateConfig protects every persistence path, including direct Store users.
+// Zero values that historically meant "use the default" are normalized by the
+// API handlers before Update; persisted values themselves must stay bounded.
+func validateConfig(c Config) error {
+	if !validURL(c.OneBot.HTTPBase, "http", "https") || !validURL(c.OneBot.WSURL, "ws", "wss") {
+		return fmt.Errorf("invalid OneBot URL")
+	}
+	if len(c.OneBot.Token) > maxTokenBytes {
+		return fmt.Errorf("OneBot token is too long")
+	}
+	if len(c.Masters) > maxMasters {
+		return fmt.Errorf("too many masters")
+	}
+	seenMasters := make(map[int64]struct{}, len(c.Masters))
+	for _, m := range c.Masters {
+		if m.UserID <= 0 || m.MinLevel < 0 || m.MinLevel > 3 || !validText(m.Nickname, maxTextBytes) {
+			return fmt.Errorf("invalid master")
+		}
+		if m.Kind != "" && m.Kind != "full" && m.Kind != "notify" {
+			return fmt.Errorf("invalid master kind")
+		}
+		if _, ok := seenMasters[m.UserID]; ok {
+			return fmt.Errorf("duplicate master %d", m.UserID)
+		}
+		seenMasters[m.UserID] = struct{}{}
+	}
+	if len(c.Groups) > maxGroups {
+		return fmt.Errorf("too many groups")
+	}
+	seenGroups := make(map[int64]struct{}, len(c.Groups))
+	for _, g := range c.Groups {
+		if g.GroupID <= 0 || !validText(g.GroupName, maxTextBytes) {
+			return fmt.Errorf("invalid group")
+		}
+		if _, ok := seenGroups[g.GroupID]; ok {
+			return fmt.Errorf("duplicate group %d", g.GroupID)
+		}
+		seenGroups[g.GroupID] = struct{}{}
+	}
+	if len(c.Rules.UrgentKeywords) > maxUrgentKeywords {
+		return fmt.Errorf("too many urgent keywords")
+	}
+	for _, kw := range c.Rules.UrgentKeywords {
+		if !validText(kw, maxKeywordBytes) {
+			return fmt.Errorf("invalid urgent keyword")
+		}
+	}
+	if len(c.Rules.SenderOverrides) > maxSenderOverrides {
+		return fmt.Errorf("too many sender overrides")
+	}
+	seenOverrides := make(map[int64]struct{}, len(c.Rules.SenderOverrides))
+	for _, o := range c.Rules.SenderOverrides {
+		if o.UserID <= 0 || !validText(o.Note, maxTextBytes) || (o.Level != "vip" && o.Level != "normal" && o.Level != "muted") {
+			return fmt.Errorf("invalid sender override")
+		}
+		if _, ok := seenOverrides[o.UserID]; ok {
+			return fmt.Errorf("duplicate sender override %d", o.UserID)
+		}
+		seenOverrides[o.UserID] = struct{}{}
+	}
+	if c.Rules.QuietWindowSec < 1 || c.Rules.QuietWindowSec > maxQuietWindowSec {
+		return fmt.Errorf("quiet window out of range")
+	}
+	if c.Rules.MaxHoldSec < 0 || c.Rules.MaxHoldSec > maxHoldSec {
+		return fmt.Errorf("max hold out of range")
+	}
+	if err := validateLLMConfig(c.LLM); err != nil {
+		return fmt.Errorf("LLM: %w", err)
+	}
+	if err := validateJevConfig(c.Jev); err != nil {
+		return fmt.Errorf("Jev: %w", err)
+	}
+	return nil
+}
+
+func validateLLMConfig(c LLMConfig) error {
+	if c.Enabled && c.BaseURL == "" {
+		return fmt.Errorf("enabled LLM requires a base URL")
+	}
+	if !validURL(c.BaseURL, "http", "https") || len(c.APIKey) > maxTokenBytes || !validText(c.Model, maxModelBytes) {
+		return fmt.Errorf("invalid endpoint, key or model")
+	}
+	if c.Timeout < 1 || c.Timeout > maxLLMTimeoutSec || c.MaxTok < 64 || c.MaxTok > 8192 || c.Temp < 0 || c.Temp > 2 {
+		return fmt.Errorf("invalid timeout, token or temperature")
+	}
+	return nil
+}
+
+func validateJevConfig(c JevConfig) error {
+	if c.Enabled && c.BaseURL == "" {
+		return fmt.Errorf("enabled Jev requires a base URL")
+	}
+	if !validURL(c.BaseURL, "http", "https") || len(c.APIKey) > maxTokenBytes || !validText(c.Model, maxModelBytes) {
+		return fmt.Errorf("invalid endpoint, key or model")
+	}
+	if c.Threshold < 0 || c.Threshold > 1 || c.ContextN < 0 || c.ContextN > maxJevContext || c.Timeout < 1 || c.Timeout > maxLLMTimeoutSec {
+		return fmt.Errorf("invalid threshold, context or timeout")
+	}
+	return nil
 }
