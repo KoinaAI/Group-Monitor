@@ -83,7 +83,7 @@ docker run --name group-monitor \
   -p 8787:8080 \
   -v group-monitor-data:/data \
   -e NAP_PASSWORD='your-break-glass-password' \
-  ghcr.io/koinai/group-monitor:latest
+  ghcr.io/koinaai/group-monitor:latest
 ```
 
 构建并推送镜像需要先登录 GHCR：
@@ -92,8 +92,8 @@ docker run --name group-monitor \
 echo "$CR_PAT" | docker login ghcr.io -u YOUR_GITHUB_USER --password-stdin
 export HEROUI_KEY='your-private-heroui-key'
 docker buildx build --platform linux/amd64 \
-  -t ghcr.io/koinai/group-monitor:latest \
-  -t ghcr.io/koinai/group-monitor:$(git rev-parse --short HEAD) \
+  -t ghcr.io/koinaai/group-monitor:latest \
+  -t ghcr.io/koinaai/group-monitor:$(git rev-parse --short HEAD) \
   --secret id=heroui_key,env=HEROUI_KEY \
   --push .
 ```
