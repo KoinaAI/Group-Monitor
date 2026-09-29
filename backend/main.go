@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -24,10 +25,17 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 	log.Printf("[nap] config loaded from %s", cfgPath)
+	noticeDir := envOr("NAP_NOTICE_DIR", filepath.Join(filepath.Dir(cfgPath), "notices"))
+	notices, err := NewNoticeStore(noticeDir)
+	if err != nil {
+		log.Fatalf("open notice store: %v", err)
+	}
+	defer notices.Close()
 
 	hub := NewHub()
 	ob := NewOneBot()
 	pipe := NewPipeline(store, ob, hub)
+	pipe.SetNoticeStore(notices)
 	defer pipe.Shutdown()
 	defer ob.Shutdown()
 
@@ -42,6 +50,7 @@ func main() {
 	ob.Reconfigure(cfg.OneBot)
 
 	api := NewAPI(store, ob, hub, pipe)
+	api.SetNoticeStore(notices)
 	mux := api.Routes()
 
 	srv := &http.Server{

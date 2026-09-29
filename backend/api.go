@@ -18,6 +18,7 @@ type API struct {
 	ob        *OneBot
 	hub       *Hub
 	pipe      *Pipeline
+	notices   *NoticeStore
 	otp       otpState
 	masterOtp masterOtpState
 
@@ -79,6 +80,8 @@ func NewAPI(store *Store, ob *OneBot, hub *Hub, pipe *Pipeline) *API {
 	}
 }
 
+func (a *API) SetNoticeStore(store *NoticeStore) { a.notices = store }
+
 func (a *API) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 
@@ -114,6 +117,7 @@ func (a *API) Routes() *http.ServeMux {
 		"/api/lookup":                 a.handleLookup,              // GET nickname for a QQ
 		"/api/logs":                   a.handleLogs,                // GET recent logs
 		"/api/escalations":            a.handleEscalations,         // GET recent escalations
+		"/api/notices":                a.handleNotices,             // GET durable useful notices
 		"/api/events":                 a.handleSSE,                 // SSE stream
 	}
 	for path, h := range protected {
@@ -762,6 +766,24 @@ func (a *API) handleLogs(w http.ResponseWriter, r *http.Request) {
 // refresh.
 func (a *API) handleEscalations(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, a.hub.RecentEscalations())
+}
+
+func (a *API) handleNotices(w http.ResponseWriter, r *http.Request) {
+	if a.notices == nil {
+		writeJSON(w, 200, []NoticeRecord{})
+		return
+	}
+	var q NoticeQuery
+	q.GroupID, _ = strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("groupId")), 10, 64)
+	q.Query = strings.TrimSpace(r.URL.Query().Get("q"))
+	q.Limit, _ = strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+	q.Before, _ = strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("before")), 10, 64)
+	rows, err := a.notices.Query(q)
+	if err != nil {
+		writeErr(w, 500, "读取正式通知失败："+err.Error())
+		return
+	}
+	writeJSON(w, 200, rows)
 }
 
 func (a *API) handleSSE(w http.ResponseWriter, r *http.Request) {

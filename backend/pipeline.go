@@ -33,6 +33,7 @@ type scored struct {
 	senderLabel string
 	urgent      bool
 	urgentWhy   string
+	jevNoul     float64
 }
 
 // groupBuffer accumulates non-urgent messages for one group until the quiet
@@ -63,9 +64,10 @@ type jevQueue struct {
 }
 
 type Pipeline struct {
-	store *Store
-	ob    *OneBot
-	hub   *Hub
+	store   *Store
+	ob      *OneBot
+	hub     *Hub
+	notices *NoticeStore
 
 	mu         sync.Mutex
 	buffers    map[int64]*groupBuffer
@@ -94,6 +96,11 @@ func NewPipeline(store *Store, ob *OneBot, hub *Hub) *Pipeline {
 		cancel:    cancel,
 	}
 }
+
+// SetNoticeStore attaches the durable notice sink after construction. Keeping
+// it optional preserves lightweight pipeline tests and allows a store failure
+// to degrade to in-memory notification processing.
+func (p *Pipeline) SetNoticeStore(store *NoticeStore) { p.notices = store }
 
 func (p *Pipeline) Shutdown() {
 	p.mu.Lock()
@@ -343,6 +350,7 @@ func (p *Pipeline) jevGateAndEnqueue(ctx context.Context, work jevWork) {
 			fmt.Sprintf("Jev 判定不重要（%.2f<%.2f）已跳过：%s：%s", noul, thr, gm.Nickname, truncate(gm.Text, 24)))
 		return
 	}
+	sc.jevNoul = noul
 	p.enqueue(cfg, gm.GroupID, gm.GroupName, sc)
 }
 
@@ -582,6 +590,7 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 				Title:   "紧急消息（未经 LLM 处理）",
 				Summary: rawDigest(batch),
 			}
+			p.persistNotice(groupID, groupName, batch, res, urgent)
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		} else {
 			p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("已缓冲 %d 条，但 LLM 未启用，普通消息不推送", len(batch)))
@@ -589,11 +598,16 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		return
 	}
 
-	res, _, err := callLLMContext(p.ctx, cfg.LLM, transcript)
+	userContent := transcript
+	if history := p.noticeContext(groupID, transcript); history != "" {
+		userContent += "\n\n【历史正式通知参考】\n" + history
+	}
+	res, _, err := callLLMContext(p.ctx, cfg.LLM, userContent)
 	if err != nil {
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
 			res = LLMResult{Useful: true, Level: 3, Title: "紧急消息（LLM 处理失败）", Summary: rawDigest(batch)}
+			p.persistNotice(groupID, groupName, batch, res, urgent)
 			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		}
 		return
@@ -618,7 +632,47 @@ func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string
 		p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("LLM 判定 %d 条为噪音已过滤：%s", len(batch), res.Reason))
 		return
 	}
+	p.persistNotice(groupID, groupName, batch, res, urgent)
 	p.escalateGeneration(groupID, groupName, res, urgent, generation)
+}
+
+func (p *Pipeline) persistNotice(groupID int64, groupName string, batch []scored, res LLMResult, urgent bool) {
+	if p.notices == nil || len(batch) == 0 {
+		return
+	}
+	ids := make([]int64, 0, len(batch))
+	sources := make([]NoticeSource, 0, len(batch))
+	for _, s := range batch {
+		if s.msg.MessageID != 0 {
+			ids = append(ids, s.msg.MessageID)
+		}
+		sources = append(sources, NoticeSource{MessageID: s.msg.MessageID, Time: s.msg.Time, UserID: s.msg.UserID, Nickname: limitText(s.msg.Nickname, 128), JevNoul: s.jevNoul})
+	}
+	if _, err := p.notices.Append(NoticeRecord{GroupID: groupID, Group: limitText(groupName, 256), MessageIDs: ids, Sources: sources, Result: res, Urgent: urgent}); err != nil {
+		p.hub.Log("error", groupID, groupName, "正式通知入库失败："+err.Error())
+	}
+}
+
+func (p *Pipeline) noticeContext(groupID int64, transcript string) string {
+	if p.notices == nil {
+		return ""
+	}
+	// The current transcript is usually a long, multi-sender string, so using it
+	// as one exact search phrase would miss related notices. Load a small recent
+	// window for the same group; the model can decide which item is relevant.
+	rows, err := p.notices.Query(NoticeQuery{GroupID: groupID, Limit: 6})
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, n := range rows {
+		fmt.Fprintf(&b, "- %s：%s", limitText(n.Result.Title, 80), limitText(n.Result.Summary, 320))
+		if n.Result.Time != "" || n.Result.Deadline != "" {
+			fmt.Fprintf(&b, "（时间：%s，截止：%s）", limitText(n.Result.Time, 80), limitText(n.Result.Deadline, 80))
+		}
+		b.WriteByte('\n')
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // escalate formats the reminder and DMs eligible masters.

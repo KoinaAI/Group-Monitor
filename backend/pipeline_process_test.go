@@ -14,6 +14,11 @@ func TestPipelineLLMVerdictAndMasterThreshold(t *testing.T) {
 		c.Masters = []Master{{UserID: 1, MinLevel: 1}, {UserID: 2, MinLevel: 2}, {UserID: 3, MinLevel: 3}}
 		c.LLM.Enabled = true
 	})
+	notices, err := NewNoticeStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pipe.SetNoticeStore(notices)
 	a := NewAPI(store, pipe.ob, pipe.hub, pipe)
 	f := newOneBotFixture(t, a)
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -22,7 +27,9 @@ func TestPipelineLLMVerdictAndMasterThreshold(t *testing.T) {
 	defer llm.Close()
 	cfg := store.Get()
 	cfg.LLM.BaseURL = llm.URL
-	sc := classify(&cfg, msg(100, 7, "owner", "明日开会"))
+	source := msg(100, 7, "owner", "明日开会")
+	source.MessageID = 77
+	sc := classify(&cfg, source)
 	pipe.process(cfg, 100, "班群", []scored{sc}, false)
 	sent := f.sent()
 	recipients := map[int64]bool{}
@@ -35,6 +42,10 @@ func TestPipelineLLMVerdictAndMasterThreshold(t *testing.T) {
 	escs := pipe.hub.RecentEscalations()
 	if len(escs) != 1 || escs[0].(map[string]any)["level"] != 2 || escs[0].(map[string]any)["notified"] != 2 {
 		t.Fatalf("escalation=%v", escs)
+	}
+	rows, err := notices.Query(NoticeQuery{GroupID: 100, Limit: 10})
+	if err != nil || len(rows) != 1 || len(rows[0].MessageIDs) != 1 || rows[0].MessageIDs[0] != 77 {
+		t.Fatalf("durable notice rows=%+v err=%v", rows, err)
 	}
 }
 
