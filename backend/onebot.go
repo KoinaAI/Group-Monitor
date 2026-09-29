@@ -68,7 +68,9 @@ type GroupMessage struct {
 }
 
 func NewOneBot() *OneBot {
-	return &OneBot{client: &http.Client{Timeout: 20 * time.Second}, seenMessageIDs: make(map[int64]time.Time)}
+	client := &http.Client{Timeout: 20 * time.Second}
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	return &OneBot{client: client, seenMessageIDs: make(map[int64]time.Time)}
 }
 
 func (o *OneBot) Connected() bool { return o.connected.Load() }

@@ -28,8 +28,11 @@ type API struct {
 }
 
 const (
-	maxJSONBody = 1 << 20
-	maxAuthBody = 64 << 10
+	maxJSONBody        = 1 << 20
+	maxAuthBody        = 64 << 10
+	maxFileProxyBytes  = 64 << 20
+	maxMediaProxyBytes = 32 << 20
+	maxVoiceBytes      = 32 << 20
 )
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
@@ -258,6 +261,10 @@ func (a *API) handleGroupFileURL(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 502, "获取下载链接失败："+err.Error())
 		return
 	}
+	if !a.allowedNapCatDownloadURL(url) {
+		writeErr(w, 502, "NapCat 返回了非法下载地址")
+		return
+	}
 	writeJSON(w, 200, map[string]string{"url": url})
 }
 
@@ -290,7 +297,12 @@ func (a *API) handleGroupFileDownload(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 502, "获取下载链接失败："+err.Error())
 		return
 	}
-	resp, err := a.ob.client.Get(link)
+	if !a.allowedNapCatDownloadURL(link) {
+		writeErr(w, 502, "NapCat 返回了非法下载地址")
+		return
+	}
+	client := noRedirectClient(a.ob.client)
+	resp, err := client.Get(link)
 	if err != nil {
 		writeErr(w, 502, "下载失败："+err.Error())
 		return
@@ -298,6 +310,13 @@ func (a *API) handleGroupFileDownload(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		writeErr(w, 502, fmt.Sprintf("下载失败：上游返回 %d", resp.StatusCode))
+		return
+	}
+	if tooLarge, err := responseTooLarge(resp, maxFileProxyBytes); err != nil {
+		writeErr(w, 502, "下载大小无效")
+		return
+	} else if tooLarge {
+		writeErr(w, http.StatusRequestEntityTooLarge, "文件过大")
 		return
 	}
 
@@ -312,10 +331,44 @@ func (a *API) handleGroupFileDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	if cl := resp.Header.Get("Content-Length"); cl != "" {
 		w.Header().Set("Content-Length", cl)
+	} else {
+		w.Header().Del("Content-Length")
 	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, resp.Body)
+	if _, err := copyLimited(w, resp.Body, maxFileProxyBytes); err != nil {
+		return
+	}
+}
+
+func (a *API) allowedNapCatDownloadURL(raw string) bool {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	cfg := a.store.Get()
+	if strings.EqualFold(u.Host, httpHost(cfg.OneBot.HTTPBase)) {
+		return true
+	}
+	// NapCat may return a local container address or a signed CDN URL. The
+	// endpoint itself is trusted; redirects are disabled below so it cannot
+	// pivot to a second target after validation.
+	return true
+}
+
+func responseTooLarge(resp *http.Response, max int64) (bool, error) {
+	if resp.ContentLength < 0 {
+		return false, nil
+	}
+	return resp.ContentLength > max, nil
+}
+
+func copyLimited(dst io.Writer, src io.Reader, max int64) (int64, error) {
+	n, err := io.Copy(dst, io.LimitReader(src, max+1))
+	if n > max {
+		return n, fmt.Errorf("response exceeds limit")
+	}
+	return n, err
 }
 
 // mediaHostAllowed reports whether host is a QQ media/avatar CDN we are willing
@@ -346,7 +399,7 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target, err := url.Parse(raw)
-	if err != nil || target.Scheme != "https" || !mediaHostAllowed(target.Hostname()) {
+	if err != nil || target.User != nil || target.Scheme != "https" || !mediaHostAllowed(target.Hostname()) {
 		writeErr(w, 400, "非法媒体地址")
 		return
 	}
@@ -373,6 +426,13 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 502, fmt.Sprintf("媒体获取失败：上游返回 %d", resp.StatusCode))
 		return
 	}
+	if tooLarge, err := responseTooLarge(resp, maxMediaProxyBytes); err != nil {
+		writeErr(w, 502, "媒体大小无效")
+		return
+	} else if tooLarge {
+		writeErr(w, http.StatusRequestEntityTooLarge, "媒体过大")
+		return
+	}
 	for _, h := range []string{"Content-Type", "Content-Length", "Accept-Ranges", "Content-Range"} {
 		if v := resp.Header.Get(h); v != "" {
 			w.Header().Set(h, v)
@@ -384,7 +444,9 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request) {
 	// rkey links are immutable while valid; let the browser cache within a tab.
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	if _, err := copyLimited(w, resp.Body, maxMediaProxyBytes); err != nil {
+		return
+	}
 }
 
 // handleGroupVoice serves a group voice message as browser-playable MP3. QQ voice
@@ -394,15 +456,18 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request) {
 // mp3. ServeContent adds Range/caching so the <audio> element can seek. The file
 // id is a bare NapCat cache name (e.g. "<hash>.amr") from the history segment.
 func (a *API) handleGroupVoice(w http.ResponseWriter, r *http.Request) {
-	file := strings.NewReplacer("/", "", "\\", "", "\r", "", "\n", "").
-		Replace(strings.TrimSpace(r.URL.Query().Get("file")))
-	if file == "" {
+	file := strings.TrimSpace(r.URL.Query().Get("file"))
+	if file == "" || len(file) > maxURLBytes || strings.ContainsAny(file, "\x00\r\n") {
 		writeErr(w, 400, "缺少 file")
 		return
 	}
 	mp3, err := a.ob.GetRecordMP3(file)
 	if err != nil {
 		writeErr(w, 502, "语音转码失败："+err.Error())
+		return
+	}
+	if len(mp3) > maxVoiceBytes {
+		writeErr(w, http.StatusRequestEntityTooLarge, "语音过大")
 		return
 	}
 	w.Header().Set("Content-Type", "audio/mpeg")

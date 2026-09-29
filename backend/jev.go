@@ -59,6 +59,9 @@ func jevImportanceContext(ctx context.Context, cfg JevConfig, state any) (float6
 	if cfg.BaseURL == "" {
 		return 0, fmt.Errorf("no jev endpoint configured")
 	}
+	if err := validateHTTPURL(cfg.BaseURL); err != nil {
+		return 0, err
+	}
 
 	model := cfg.Model
 	if model == "" {
@@ -87,7 +90,7 @@ func jevImportanceContext(ctx context.Context, cfg JevConfig, state any) (float6
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirectClient(http.DefaultClient).Do(req)
 	if err != nil {
 		return 0, err
 	}

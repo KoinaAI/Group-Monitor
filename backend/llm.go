@@ -125,6 +125,9 @@ func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
 	if cfg.BaseURL == "" {
 		return res, "", fmt.Errorf("no LLM base url")
 	}
+	if err := validateHTTPURL(cfg.BaseURL); err != nil {
+		return res, "", err
+	}
 	to := cfg.Timeout
 	if to <= 0 {
 		to = 45
@@ -156,7 +159,7 @@ func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirectClient(http.DefaultClient).Do(req)
 	if err != nil {
 		return res, "", err
 	}
