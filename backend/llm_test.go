@@ -83,4 +83,21 @@ func TestParseVerdictWrappedAndMultipleObjects(t *testing.T) {
 	if _, err := parseVerdict("no JSON"); err == nil {
 		t.Fatal("non-JSON must fail")
 	}
+	if _, err := parseVerdict(`{"level":1,"title":"缺少 useful"}`); err == nil {
+		t.Fatal("verdict without useful must fail")
+	}
+	if _, err := parseVerdict(`{"useful":true,"level":4}`); err == nil {
+		t.Fatal("verdict with out-of-range level must fail")
+	}
+}
+
+func TestCallLLMRejectsOversizedResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"choices":[{"message":{"content":%q}}]}`, strings.Repeat("x", maxLLMResponseBytes))
+	}))
+	defer srv.Close()
+	if _, _, err := callLLM(LLMConfig{BaseURL: srv.URL}, "batch"); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversized response error=%v", err)
+	}
 }

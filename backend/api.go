@@ -203,6 +203,7 @@ func (a *API) handleWatch(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	a.pipe.Reconcile(cfg)
 	a.broadcastStatus()
 	writeJSON(w, 200, cfg.Groups)
 }
@@ -502,6 +503,7 @@ func (a *API) handleLLM(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	a.pipe.Reconcile(cfg)
 	a.broadcastStatus()
 	writeJSON(w, 200, redactedConfig(cfg).LLM)
 }
@@ -554,6 +556,7 @@ func (a *API) handleJev(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	a.pipe.Reconcile(cfg)
 	a.broadcastStatus()
 	writeJSON(w, 200, redactedConfig(cfg).Jev)
 }
@@ -643,6 +646,7 @@ func (a *API) handleEnabled(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err.Error())
 		return
 	}
+	a.pipe.Reconcile(cfg)
 	a.hub.Log("info", 0, "", fmt.Sprintf("全局监听已%s", ternary(cfg.Enabled, "开启", "暂停")))
 	a.broadcastStatus()
 	writeJSON(w, 200, map[string]any{"enabled": cfg.Enabled})

@@ -1,10 +1,20 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
+)
+
+const (
+	maxJevConcurrent     = 8
+	maxJevQueuedPerGroup = 256
+	maxBatchMessages     = 256
+	maxTranscriptBytes   = 64 << 10
+	maxDigestBytes       = 16 << 10
 )
 
 // Sender levels (higher = more important).
@@ -38,24 +48,43 @@ type groupBuffer struct {
 	flushAt   time.Time     // scheduled flush time (for the UI countdown)
 }
 
+type jevWork struct {
+	cfg        Config
+	sc         scored
+	context    []GroupMessage
+	generation uint64
+}
+
+type jevQueue struct {
+	pending []jevWork
+	current *jevWork
+	cancel  context.CancelFunc
+	running bool
+}
+
 type Pipeline struct {
 	store *Store
 	ob    *OneBot
 	hub   *Hub
 
-	mu       sync.Mutex
-	buffers  map[int64]*groupBuffer
-	recent   map[int64][]GroupMessage // rolling per-group context for the Jev gate
-	timerSeq int64                    // monotonic source for timer generations
+	mu         sync.Mutex
+	buffers    map[int64]*groupBuffer
+	recent     map[int64][]GroupMessage // rolling per-group context for the Jev gate
+	jevQueues  map[int64]*jevQueue
+	jevSlots   chan struct{}
+	generation uint64
+	timerSeq   int64 // monotonic source for timer generations
 }
 
 func NewPipeline(store *Store, ob *OneBot, hub *Hub) *Pipeline {
 	return &Pipeline{
-		store:   store,
-		ob:      ob,
-		hub:     hub,
-		buffers: make(map[int64]*groupBuffer),
-		recent:  make(map[int64][]GroupMessage),
+		store:     store,
+		ob:        ob,
+		hub:       hub,
+		buffers:   make(map[int64]*groupBuffer),
+		recent:    make(map[int64][]GroupMessage),
+		jevQueues: make(map[int64]*jevQueue),
+		jevSlots:  make(chan struct{}, maxJevConcurrent),
 	}
 }
 
@@ -103,11 +132,48 @@ func (p *Pipeline) Ingest(gm GroupMessage) {
 	// Per-message intent gate: only messages Jev deems important enter the
 	// packing queue. Runs in a goroutine so a slow API can't stall the WS read
 	// loop. Fails open (buffers anyway) so a Jev outage never drops real notices.
-	if cfg.Jev.Enabled {
-		go p.jevGateAndEnqueue(cfg, gm, sc, ctxMsgs)
+	if cfg.Jev.Enabled && cfg.Jev.APIKey != "" {
+		p.queueJev(cfg, sc, ctxMsgs)
 		return
 	}
 	p.enqueue(cfg, gm.GroupID, gm.GroupName, sc)
+}
+
+// Reconcile is called after watch/enable changes. Old API work may finish, but
+// its generation can no longer publish a reminder.
+func (p *Pipeline) Reconcile(cfg Config) {
+	p.mu.Lock()
+	p.generation++
+	for id, b := range p.buffers {
+		if !cfg.Enabled || !isWatched(cfg, id) {
+			b.timer.Stop()
+			delete(p.buffers, id)
+		}
+	}
+	for id, q := range p.jevQueues {
+		if !cfg.Enabled || !isWatched(cfg, id) {
+			q.pending = nil
+			if q.cancel != nil {
+				q.cancel()
+			}
+		}
+	}
+	if !cfg.Enabled {
+		clear(p.recent)
+	} else {
+		for id := range p.recent {
+			if !isWatched(cfg, id) {
+				delete(p.recent, id)
+			}
+		}
+	}
+	p.mu.Unlock()
+	p.broadcastBuffers()
+}
+
+func isWatched(cfg Config, groupID int64) bool {
+	_, ok := cfg.IsWatched(groupID)
+	return ok
 }
 
 // jevContextN returns the configured context window size (defaulting sanely).
@@ -139,9 +205,89 @@ func (p *Pipeline) pushRecent(gm GroupMessage, n int) []GroupMessage {
 
 // jevGateAndEnqueue scores one message with Jev and enqueues it only if it
 // clears the importance threshold. On any Jev error it fails open.
-func (p *Pipeline) jevGateAndEnqueue(cfg Config, gm GroupMessage, sc scored, ctxMsgs []GroupMessage) {
-	noul, err := jevImportance(cfg.Jev, jevState(gm, ctxMsgs))
+func (p *Pipeline) queueJev(cfg Config, sc scored, ctxMsgs []GroupMessage) {
+	p.mu.Lock()
+	q := p.jevQueues[sc.msg.GroupID]
+	if q == nil {
+		q = &jevQueue{}
+		p.jevQueues[sc.msg.GroupID] = q
+	}
+	if len(q.pending) >= maxJevQueuedPerGroup {
+		p.mu.Unlock()
+		p.hub.Log("error", sc.msg.GroupID, sc.msg.GroupName, "Jev 队列已满，暂按重要处理")
+		if p.active(p.currentGeneration(), sc.msg.GroupID) {
+			p.enqueue(cfg, sc.msg.GroupID, sc.msg.GroupName, sc)
+		}
+		return
+	}
+	q.pending = append(q.pending, jevWork{cfg: cfg, sc: sc, context: ctxMsgs, generation: p.generation})
+	if !q.running {
+		q.running = true
+		go p.runJevQueue(sc.msg.GroupID, q)
+	}
+	p.mu.Unlock()
+}
+
+func (p *Pipeline) runJevQueue(groupID int64, q *jevQueue) {
+	for {
+		p.mu.Lock()
+		if len(q.pending) == 0 {
+			q.running = false
+			delete(p.jevQueues, groupID)
+			p.mu.Unlock()
+			return
+		}
+		work := q.pending[0]
+		q.pending[0] = jevWork{}
+		q.pending = q.pending[1:]
+		q.current = &work
+		ctx, cancel := context.WithCancel(context.Background())
+		q.cancel = cancel
+		p.mu.Unlock()
+
+		acquired := false
+		select {
+		case p.jevSlots <- struct{}{}:
+			acquired = true
+		case <-ctx.Done():
+		}
+		p.mu.Lock()
+		valid := acquired && p.generation == work.generation && q.current == &work
+		p.mu.Unlock()
+		if valid {
+			p.jevGateAndEnqueue(ctx, work)
+		}
+		if acquired {
+			<-p.jevSlots
+		}
+		cancel()
+		p.mu.Lock()
+		q.current = nil
+		q.cancel = nil
+		p.mu.Unlock()
+	}
+}
+
+func (p *Pipeline) jevGateAndEnqueue(ctx context.Context, work jevWork) {
+	cfg, sc := work.cfg, work.sc
+	gm := sc.msg
+	current := p.store.Get()
+	if !current.Enabled || !isWatched(current, gm.GroupID) {
+		return
+	}
+	if !current.Jev.Enabled || current.Jev.APIKey == "" {
+		p.enqueue(current, gm.GroupID, gm.GroupName, sc)
+		return
+	}
+	cfg.Jev = current.Jev
+	noul, err := jevImportanceContext(ctx, cfg.Jev, jevState(gm, work.context))
+	if !p.active(work.generation, gm.GroupID) {
+		return
+	}
 	if err != nil {
+		if ctx.Err() != nil {
+			return
+		}
 		p.hub.Log("error", gm.GroupID, gm.GroupName, "Jev 预筛失败，暂按重要处理："+err.Error())
 		p.enqueue(cfg, gm.GroupID, gm.GroupName, sc)
 		return
@@ -156,6 +302,17 @@ func (p *Pipeline) jevGateAndEnqueue(cfg Config, gm GroupMessage, sc scored, ctx
 		return
 	}
 	p.enqueue(cfg, gm.GroupID, gm.GroupName, sc)
+}
+
+func (p *Pipeline) active(generation uint64, groupID int64) bool {
+	p.mu.Lock()
+	valid := p.generation == generation
+	p.mu.Unlock()
+	if !valid {
+		return false
+	}
+	cfg := p.store.Get()
+	return cfg.Enabled && isWatched(cfg, groupID)
 }
 
 // classify determines the sender level (role + overrides) and message urgency.
@@ -218,6 +375,7 @@ func classify(cfg *Config, gm GroupMessage) scored {
 // noise filter threshold.
 func (p *Pipeline) handleUrgent(cfg Config, groupID int64, groupName string, sc scored) {
 	p.mu.Lock()
+	generation := p.generation
 	buf := p.buffers[groupID]
 	if buf != nil && buf.timer != nil {
 		buf.timer.Stop()
@@ -226,13 +384,26 @@ func (p *Pipeline) handleUrgent(cfg Config, groupID int64, groupName string, sc 
 	if buf != nil {
 		pending = buf.msgs
 	}
+	if q := p.jevQueues[groupID]; q != nil {
+		if q.current != nil {
+			pending = append(pending, q.current.sc)
+		}
+		for _, work := range q.pending {
+			pending = append(pending, work.sc)
+		}
+		q.pending = nil
+		q.current = nil
+		if q.cancel != nil {
+			q.cancel()
+		}
+	}
 	delete(p.buffers, groupID)
 	p.mu.Unlock()
 
 	batch := append(pending, sc)
 	p.hub.Log("urgent", groupID, groupName, fmt.Sprintf("紧急消息（%s）来自 %s，立即处理 %d 条", sc.urgentWhy, sc.msg.Nickname, len(batch)))
 	p.broadcastBuffers()
-	go p.process(cfg, groupID, groupName, batch, true)
+	go p.processGeneration(cfg, groupID, groupName, batch, true, generation)
 }
 
 // enqueue adds a normal message to the group buffer and (re)arms the quiet
@@ -253,6 +424,14 @@ func (p *Pipeline) enqueue(cfg Config, groupID int64, groupName string, sc score
 	}
 	buf.groupName = groupName
 	buf.msgs = append(buf.msgs, sc)
+	if len(buf.msgs) >= maxBatchMessages {
+		p.timerSeq++
+		gen := p.timerSeq
+		buf.timerGen = gen
+		p.mu.Unlock()
+		p.flush(groupID, gen)
+		return
+	}
 
 	// Compute the delay: normally the full quiet window, but clamped so we
 	// never exceed MaxHoldSec from the first message.
@@ -306,13 +485,26 @@ func (p *Pipeline) flush(groupID int64, gen int64) {
 
 	cfg := p.store.Get()
 	p.broadcastBuffers()
-	p.process(cfg, groupID, name, msgs, false)
+	p.processGeneration(cfg, groupID, name, msgs, false, p.currentGeneration())
+}
+
+func (p *Pipeline) currentGeneration() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.generation
 }
 
 // process runs the batch through the LLM (if enabled) and escalates when the
 // verdict says the content is useful.
 func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []scored, urgent bool) {
+	p.processGeneration(cfg, groupID, groupName, batch, urgent, p.currentGeneration())
+}
+
+func (p *Pipeline) processGeneration(cfg Config, groupID int64, groupName string, batch []scored, urgent bool, generation uint64) {
 	if len(batch) == 0 {
+		return
+	}
+	if !p.active(generation, groupID) {
 		return
 	}
 	// Highest sender level in the batch drives elevation.
@@ -334,7 +526,7 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 				Title:   "紧急消息（未经 LLM 处理）",
 				Summary: rawDigest(batch),
 			}
-			p.escalate(cfg, groupID, groupName, res, urgent)
+			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		} else {
 			p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("已缓冲 %d 条，但 LLM 未启用，普通消息不推送", len(batch)))
 		}
@@ -346,7 +538,7 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 		p.hub.Log("error", groupID, groupName, "LLM 处理失败："+err.Error())
 		if urgent {
 			res = LLMResult{Useful: true, Level: 3, Title: "紧急消息（LLM 处理失败）", Summary: rawDigest(batch)}
-			p.escalate(cfg, groupID, groupName, res, urgent)
+			p.escalateGeneration(groupID, groupName, res, urgent, generation)
 		}
 		return
 	}
@@ -360,17 +552,29 @@ func (p *Pipeline) process(cfg Config, groupID int64, groupName string, batch []
 	}
 	if urgent {
 		res.Level = 3
+		res.Useful = true
+		if strings.TrimSpace(res.Summary) == "" {
+			res.Summary = rawDigest(batch)
+		}
 	}
 
 	if !res.Useful {
 		p.hub.Log("suppress", groupID, groupName, fmt.Sprintf("LLM 判定 %d 条为噪音已过滤：%s", len(batch), res.Reason))
 		return
 	}
-	p.escalate(cfg, groupID, groupName, res, urgent)
+	p.escalateGeneration(groupID, groupName, res, urgent, generation)
 }
 
 // escalate formats the reminder and DMs eligible masters.
 func (p *Pipeline) escalate(cfg Config, groupID int64, groupName string, res LLMResult, urgent bool) {
+	p.escalateGeneration(groupID, groupName, res, urgent, p.currentGeneration())
+}
+
+func (p *Pipeline) escalateGeneration(groupID int64, groupName string, res LLMResult, urgent bool, generation uint64) {
+	if !p.active(generation, groupID) {
+		return
+	}
+	cfg := p.store.Get()
 	if res.Level <= 0 {
 		res.Level = 1
 	}
@@ -378,6 +582,9 @@ func (p *Pipeline) escalate(cfg Config, groupID int64, groupName string, res LLM
 
 	sent := 0
 	for _, m := range cfg.Masters {
+		if !p.active(generation, groupID) {
+			return
+		}
 		if res.Level < m.MinLevel {
 			continue
 		}
@@ -406,8 +613,11 @@ func (p *Pipeline) escalate(cfg Config, groupID int64, groupName string, res LLM
 
 func buildTranscript(groupName string, batch []scored) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "群聊：%s\n消息条数：%d\n\n", groupName, len(batch))
+	fmt.Fprintf(&b, "群聊：%s\n消息条数：%d\n\n", limitText(groupName, 256), len(batch))
 	for _, s := range batch {
+		if b.Len() >= maxTranscriptBytes-5000 {
+			break
+		}
 		t := time.Unix(s.msg.Time, 0).Format("15:04:05")
 		tag := ""
 		if s.senderLevel >= LvlAdmin {
@@ -416,7 +626,7 @@ func buildTranscript(groupName string, batch []scored) string {
 		if s.urgent {
 			tag += "‼"
 		}
-		fmt.Fprintf(&b, "[%s] %s%s(%s,QQ%d): %s\n", t, tag, s.msg.Nickname, s.senderLabel, s.msg.UserID, s.msg.Text)
+		fmt.Fprintf(&b, "[%s] %s%s(%s,QQ%d): %s\n", t, tag, limitText(s.msg.Nickname, 128), s.senderLabel, s.msg.UserID, limitText(s.msg.Text, 4096))
 	}
 	return b.String()
 }
@@ -424,13 +634,23 @@ func buildTranscript(groupName string, batch []scored) string {
 func rawDigest(batch []scored) string {
 	var b strings.Builder
 	for _, s := range batch {
-		fmt.Fprintf(&b, "· %s：%s\n", s.msg.Nickname, s.msg.Text)
+		if b.Len() >= maxDigestBytes-5000 {
+			break
+		}
+		fmt.Fprintf(&b, "· %s：%s\n", limitText(s.msg.Nickname, 128), limitText(s.msg.Text, 4096))
 	}
 	return strings.TrimSpace(b.String())
 }
 
 // formatReminder builds the private message sent to masters.
 func formatReminder(groupName string, res LLMResult, urgent bool) string {
+	groupName = limitText(groupName, 256)
+	res.Title = limitText(res.Title, 256)
+	res.Summary = limitText(res.Summary, 8192)
+	res.Time = limitText(res.Time, 256)
+	res.Place = limitText(res.Place, 256)
+	res.Event = limitText(res.Event, 512)
+	res.Deadline = limitText(res.Deadline, 256)
 	head := "🔔"
 	switch res.Level {
 	case 3:
@@ -462,6 +682,17 @@ func formatReminder(groupName string, res LLMResult, urgent bool) string {
 	}
 	fmt.Fprintf(&b, "━━━━━━━━━━\n⏱ %s", time.Now().Format("2006-01-02 15:04"))
 	return b.String()
+}
+
+func limitText(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	s = s[:max]
+	for !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s + "…"
 }
 
 // broadcastBuffers pushes the current pending-buffer state for the dashboard

@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -229,6 +230,28 @@ func TestJevGate(t *testing.T) {
 	pipe.Ingest(msg(100, 3, "member", "又一条"))
 	if !waitPending(pipe, 100, 2) {
 		t.Fatalf("Jev error should fail open and buffer, got %d", pipe.pending(100))
+	}
+}
+
+func TestJevWithoutAPIKeyBypassesExternalCall(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	pipe, _ := testPipe(t, func(c *Config) {
+		c.Jev.Enabled = true
+		c.Jev.APIKey = ""
+		c.Jev.BaseURL = srv.URL
+		c.Rules.QuietWindowSec = 60
+	})
+	pipe.Ingest(msg(100, 1, "member", "没有密钥时应直接进入缓冲"))
+	if !waitPending(pipe, 100, 1) {
+		t.Fatalf("missing-key Jev should bypass gate, pending=%d", pipe.pending(100))
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("missing-key Jev made %d external calls", got)
 	}
 }
 

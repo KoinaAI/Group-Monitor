@@ -16,9 +16,11 @@ import (
 // that the message carries information worth notifying about. We keep the
 // question/criteria system-managed so every message is judged the same way.
 const (
-	jevQuestion  = "结合 `recent` 提供的上下文，判断 `message` 这条群消息本身是否包含对群里学生本人有用、值得单独提醒的信息（如通知、安排、时间/地点/截止、点名、需提交或办理的事项）。若仅为回执附和（收到/好的/+1）、表情、纯图片、班委/学委之间的琐碎协调、广告或日常闲聊，则不重要。"
-	jevTrueDesc  = "包含面向学生的有用通知，或需要主人知晓/行动的信息"
-	jevFalseDesc = "回执/附和/表情/纯媒体/班委琐碎协调/广告/闲聊等噪音"
+	jevQuestion         = "结合 `recent` 提供的上下文，判断 `message` 这条群消息本身是否包含对群里学生本人有用、值得单独提醒的信息（如通知、安排、时间/地点/截止、点名、需提交或办理的事项）。若仅为回执附和（收到/好的/+1）、表情、纯图片、班委/学委之间的琐碎协调、广告或日常闲聊，则不重要。"
+	jevTrueDesc         = "包含面向学生的有用通知，或需要主人知晓/行动的信息"
+	jevFalseDesc        = "回执/附和/表情/纯媒体/班委琐碎协调/广告/闲聊等噪音"
+	maxJevRequestBytes  = 64 << 10
+	maxJevResponseBytes = 1 << 20
 )
 
 type jevQuestionBody struct {
@@ -44,15 +46,19 @@ type jevResp struct {
 // jevImportance asks Jev for the importance probability of a single message.
 // state should carry the message plus its recent context.
 func jevImportance(cfg JevConfig, state any) (float64, error) {
-	if cfg.BaseURL == "" {
-		return 0, fmt.Errorf("no jev endpoint configured")
-	}
 	to := cfg.Timeout
 	if to <= 0 {
 		to = 10
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(to)*time.Second)
 	defer cancel()
+	return jevImportanceContext(ctx, cfg, state)
+}
+
+func jevImportanceContext(ctx context.Context, cfg JevConfig, state any) (float64, error) {
+	if cfg.BaseURL == "" {
+		return 0, fmt.Errorf("no jev endpoint configured")
+	}
 
 	model := cfg.Model
 	if model == "" {
@@ -70,6 +76,9 @@ func jevImportance(cfg JevConfig, state any) (float64, error) {
 		},
 	}
 	b, _ := json.Marshal(body)
+	if len(b) > maxJevRequestBytes {
+		return 0, fmt.Errorf("jev request too large")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.BaseURL, bytes.NewReader(b))
 	if err != nil {
 		return 0, err
@@ -83,7 +92,13 @@ func jevImportance(cfg JevConfig, state any) (float64, error) {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxJevResponseBytes+1))
+	if err != nil {
+		return 0, fmt.Errorf("read jev response: %w", err)
+	}
+	if len(raw) > maxJevResponseBytes {
+		return 0, fmt.Errorf("jev response too large")
+	}
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("jev %d: %s", resp.StatusCode, truncate(string(raw), 200))
 	}

@@ -94,6 +94,11 @@ type chatResp struct {
 	} `json:"error"`
 }
 
+const (
+	maxLLMResponseBytes = 1 << 20
+	maxLLMRequestBytes  = 128 << 10
+)
+
 // streamChunk is one SSE delta frame. We only ever consume `content`; any
 // `reasoning_content` (the model's chain-of-thought scratchpad) is read but
 // discarded so it never leaks into the verdict.
@@ -138,6 +143,9 @@ func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
 		},
 	}
 	b, _ := json.Marshal(body)
+	if len(b) > maxLLMRequestBytes {
+		return res, "", fmt.Errorf("LLM request too large")
+	}
 	url := strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
@@ -170,7 +178,13 @@ func callLLM(cfg LLMConfig, userContent string) (LLMResult, string, error) {
 		}
 	} else {
 		// Fallback: the endpoint returned a single JSON body despite stream:true.
-		raw, _ := io.ReadAll(resp.Body)
+		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxLLMResponseBytes+1))
+		if err != nil {
+			return res, "", fmt.Errorf("read LLM response: %w", err)
+		}
+		if len(raw) > maxLLMResponseBytes {
+			return res, "", fmt.Errorf("LLM response too large")
+		}
 		var cr chatResp
 		if err := json.Unmarshal(raw, &cr); err != nil {
 			return res, "", fmt.Errorf("bad LLM response: %s", truncate(string(raw), 300))
@@ -200,7 +214,7 @@ func readSSEContent(r io.Reader) (string, error) {
 	var sb strings.Builder
 	sc := bufio.NewScanner(r)
 	// Allow long data lines (a full chunk can exceed the default 64KB token).
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	sc.Buffer(make([]byte, 0, 64*1024), maxLLMResponseBytes)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || !strings.HasPrefix(line, "data:") {
@@ -219,6 +233,9 @@ func readSSEContent(r io.Reader) (string, error) {
 		}
 		for _, c := range chunk.Choices {
 			// Only the answer body; reasoning_content is deliberately dropped.
+			if sb.Len()+len(c.Delta.Content) > maxLLMResponseBytes {
+				return sb.String(), fmt.Errorf("LLM response too large")
+			}
 			sb.WriteString(c.Delta.Content)
 		}
 	}
@@ -236,8 +253,8 @@ func parseVerdict(content string) (LLMResult, error) {
 	s = strings.TrimPrefix(s, "```json")
 	s = strings.TrimPrefix(s, "```")
 	s = strings.TrimSuffix(s, "```")
-	if err := json.Unmarshal([]byte(strings.TrimSpace(s)), &res); err == nil {
-		return res, nil
+	if candidate, ok := decodeVerdict(strings.TrimSpace(s)); ok {
+		return candidate, nil
 	}
 	// Decode from each opening brace. Decoder stops after the first complete
 	// object, so explanatory text or a second object cannot make the first
@@ -246,10 +263,49 @@ func parseVerdict(content string) (LLMResult, error) {
 		if content[i] != '{' {
 			continue
 		}
-		candidate := LLMResult{}
-		if err := json.NewDecoder(strings.NewReader(content[i:])).Decode(&candidate); err == nil {
+		candidate, ok := decodeVerdictFromReader(strings.NewReader(content[i:]))
+		if ok {
 			return candidate, nil
 		}
 	}
 	return res, fmt.Errorf("could not parse JSON verdict from: %s", truncate(content, 200))
+}
+
+func decodeVerdict(s string) (LLMResult, bool) {
+	return decodeVerdictFromReader(strings.NewReader(s))
+}
+
+func decodeVerdictFromReader(r io.Reader) (LLMResult, bool) {
+	var raw map[string]json.RawMessage
+	dec := json.NewDecoder(io.LimitReader(r, maxLLMResponseBytes))
+	if err := dec.Decode(&raw); err != nil || raw == nil {
+		return LLMResult{}, false
+	}
+	usefulRaw, ok := raw["useful"]
+	if !ok {
+		return LLMResult{}, false
+	}
+	var useful bool
+	if err := json.Unmarshal(usefulRaw, &useful); err != nil {
+		return LLMResult{}, false
+	}
+	levelRaw, ok := raw["level"]
+	var level int
+	if ok {
+		if err := json.Unmarshal(levelRaw, &level); err != nil || level < 0 || level > 3 {
+			return LLMResult{}, false
+		}
+	}
+	var result LLMResult
+	if err := json.Unmarshal(mustMarshal(raw), &result); err != nil {
+		return LLMResult{}, false
+	}
+	result.Useful = useful
+	result.Level = level
+	return result, true
+}
+
+func mustMarshal(v any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }
