@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,18 @@ func TestOneBotFrameAndMessageParsing(t *testing.T) {
 	}
 	if got := parseGroupMessage(map[string]any{"message": "hello"}, 0); got.Role != "member" || got.Text != "hello" {
 		t.Fatalf("string fallback: %+v", got)
+	}
+}
+
+func TestOneBotSuppressesDuplicateMessageIDs(t *testing.T) {
+	o := NewOneBot()
+	var events int
+	o.onEvent = func(GroupMessage) { events++ }
+	frame := `{"post_type":"message","message_type":"group","group_id":42,"user_id":7,"message_id":8,"message":"通知"}`
+	o.handleFrame([]byte(frame))
+	o.handleFrame([]byte(frame))
+	if events != 1 {
+		t.Fatalf("duplicate message emitted %d events", events)
 	}
 }
 
@@ -133,6 +146,65 @@ func TestOneBotCallRejectsFailureEnvelope(t *testing.T) {
 		if err == nil {
 			t.Fatalf("response %q was accepted", body)
 		}
+	}
+}
+
+func TestOneBotCallRejectsHTTPFailureAndOversize(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		body   string
+		want   string
+	}{
+		{http.StatusBadGateway, "upstream", "http 502"},
+		{http.StatusOK, strings.Repeat("x", maxOneBotResponseBytes+1), "response too large"},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.status)
+			fmt.Fprint(w, tc.body)
+		}))
+		o := NewOneBot()
+		o.httpBase = srv.URL
+		_, err := o.call("get_group_list", map[string]any{})
+		srv.Close()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("status=%d error=%v want=%q", tc.status, err, tc.want)
+		}
+	}
+}
+
+func TestOneBotHistoryHonorsContextCancellation(t *testing.T) {
+	started := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	o := NewOneBot()
+	o.httpBase = srv.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := o.GetGroupMsgHistoryContext(ctx, 42, 10, 0)
+		done <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("history request did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("canceled history returned nil error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("history did not honor cancellation")
 	}
 }
 

@@ -224,8 +224,11 @@ func (a *API) handleGroupHistory(w http.ResponseWriter, r *http.Request) {
 	if b := strings.TrimSpace(r.URL.Query().Get("beforeSeq")); b != "" {
 		beforeSeq, _ = strconv.ParseInt(b, 10, 64)
 	}
-	msgs, err := a.ob.GetGroupMsgHistory(gid, count, beforeSeq)
+	msgs, err := a.ob.GetGroupMsgHistoryContext(r.Context(), gid, count, beforeSeq)
 	if err != nil {
+		if r.Context().Err() != nil {
+			return
+		}
 		writeErr(w, 502, "获取聊天记录失败："+err.Error())
 		return
 	}

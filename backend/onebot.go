@@ -17,6 +17,13 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	maxOneBotResponseBytes = 4 << 20
+	maxOneBotWSFrameBytes  = 4 << 20
+	maxSeenMessageIDs      = 4096
+	seenMessageTTL         = 15 * time.Minute
+)
+
 // OneBot is a thin client for a NapCat (OneBot v11) instance: it keeps a
 // WebSocket connection open to receive events, and calls the HTTP API to send
 // messages and query metadata.
@@ -39,6 +46,9 @@ type OneBot struct {
 	cancel context.CancelFunc
 	genMu  sync.Mutex // serialises cancel swaps across reconfigures
 	gen    uint64
+
+	seenMu         sync.Mutex
+	seenMessageIDs map[int64]time.Time
 }
 
 // GroupMessage is the normalised form of an OneBot group message event.
@@ -58,7 +68,7 @@ type GroupMessage struct {
 }
 
 func NewOneBot() *OneBot {
-	return &OneBot{client: &http.Client{Timeout: 20 * time.Second}}
+	return &OneBot{client: &http.Client{Timeout: 20 * time.Second}, seenMessageIDs: make(map[int64]time.Time)}
 }
 
 func (o *OneBot) Connected() bool { return o.connected.Load() }
@@ -73,6 +83,8 @@ func (o *OneBot) Reconfigure(c OneBotConfig) {
 	o.wsURL = c.WSURL
 	o.token = c.Token
 	o.mu.Unlock()
+	o.selfID.Store(0)
+	o.lastLogin.Store(nil)
 
 	if o.cancel != nil {
 		o.cancel()
@@ -104,8 +116,12 @@ func (o *OneBot) runWS(ctx context.Context, gen uint64) {
 		default:
 		}
 		if err := o.dialAndRead(ctx, gen); err != nil {
+			wasConnected := o.Connected()
 			o.setConnected(gen, false)
 			if ctx.Err() == nil {
+				if wasConnected {
+					backoff = time.Second
+				}
 				log.Printf("[onebot] ws disconnected: %v (retry in %s)", err, backoff)
 			}
 		}
@@ -162,6 +178,7 @@ func (o *OneBot) dialAndRead(ctx context.Context, gen uint64) error {
 	// Without a read deadline, a silently half-open socket would block
 	// ReadMessage forever, leaving `connected` true and never reconnecting.
 	const readWait = 90 * time.Second
+	conn.SetReadLimit(maxOneBotWSFrameBytes)
 	conn.SetReadDeadline(time.Now().Add(readWait))
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(readWait))
@@ -174,12 +191,19 @@ func (o *OneBot) dialAndRead(ctx context.Context, gen uint64) error {
 		}
 		conn.SetReadDeadline(time.Now().Add(readWait))
 		if ctx.Err() == nil {
-			o.handleFrame(data)
+			o.handleFrameForGeneration(data, gen)
 		}
 	}
 }
 
 func (o *OneBot) handleFrame(data []byte) {
+	o.handleFrameForGeneration(data, 0)
+}
+
+func (o *OneBot) handleFrameForGeneration(data []byte, gen uint64) {
+	if gen != 0 && !o.isCurrentGeneration(gen) {
+		return
+	}
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return
@@ -198,9 +222,47 @@ func (o *OneBot) handleFrame(data []byte) {
 		return
 	}
 	gm := parseGroupMessage(raw, o.SelfID())
+	if gm.MessageID > 0 && o.seenMessage(gm.MessageID) {
+		return
+	}
 	if o.onEvent != nil {
 		o.onEvent(gm)
 	}
+}
+
+func (o *OneBot) isCurrentGeneration(gen uint64) bool {
+	o.genMu.Lock()
+	defer o.genMu.Unlock()
+	return o.gen == gen
+}
+
+func (o *OneBot) seenMessage(id int64) bool {
+	now := time.Now()
+	o.seenMu.Lock()
+	defer o.seenMu.Unlock()
+	if o.seenMessageIDs == nil {
+		o.seenMessageIDs = make(map[int64]time.Time)
+	}
+	for oldID, at := range o.seenMessageIDs {
+		if now.Sub(at) > seenMessageTTL {
+			delete(o.seenMessageIDs, oldID)
+		}
+	}
+	if _, ok := o.seenMessageIDs[id]; ok {
+		return true
+	}
+	if len(o.seenMessageIDs) >= maxSeenMessageIDs {
+		var oldestID int64
+		var oldest time.Time
+		for oldID, at := range o.seenMessageIDs {
+			if oldest.IsZero() || at.Before(oldest) {
+				oldestID, oldest = oldID, at
+			}
+		}
+		delete(o.seenMessageIDs, oldestID)
+	}
+	o.seenMessageIDs[id] = now
+	return false
 }
 
 func parseGroupMessage(raw map[string]any, selfID int64) GroupMessage {
@@ -294,6 +356,10 @@ func flattenMessage(msg any, selfID int64) (text string, atAll, atSelf, hasImage
 // ---- HTTP API ----
 
 func (o *OneBot) call(action string, params map[string]any) (json.RawMessage, error) {
+	return o.callContext(context.Background(), action, params)
+}
+
+func (o *OneBot) callContext(ctx context.Context, action string, params map[string]any) (json.RawMessage, error) {
 	o.mu.RLock()
 	base, token := o.httpBase, o.token
 	o.mu.RUnlock()
@@ -301,7 +367,7 @@ func (o *OneBot) call(action string, params map[string]any) (json.RawMessage, er
 		return nil, fmt.Errorf("no http base configured")
 	}
 	body, _ := json.Marshal(params)
-	req, err := http.NewRequest(http.MethodPost, base+"/"+action, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/"+action, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +380,17 @@ func (o *OneBot) call(action string, params map[string]any) (json.RawMessage, er
 		return nil, err
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("onebot %s http %d: %s", action, resp.StatusCode, truncate(string(raw), 200))
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxOneBotResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read onebot %s response: %w", action, err)
+	}
+	if len(raw) > maxOneBotResponseBytes {
+		return nil, fmt.Errorf("onebot %s response too large", action)
+	}
 	var env struct {
 		Status  string          `json:"status"`
 		Retcode int             `json:"retcode"`
@@ -460,6 +536,10 @@ type HistoryMsg struct {
 // window; a non-zero value anchors on that message_seq so the frontend can
 // lazy-load older batches. Messages come back oldest-first.
 func (o *OneBot) GetGroupMsgHistory(groupID int64, count int, beforeSeq int64) ([]HistoryMsg, error) {
+	return o.GetGroupMsgHistoryContext(context.Background(), groupID, count, beforeSeq)
+}
+
+func (o *OneBot) GetGroupMsgHistoryContext(ctx context.Context, groupID int64, count int, beforeSeq int64) ([]HistoryMsg, error) {
 	if count <= 0 || count > 60 {
 		count = 30
 	}
@@ -472,7 +552,7 @@ func (o *OneBot) GetGroupMsgHistory(groupID int64, count int, beforeSeq int64) (
 	// 的消息" bug. With reverseOrder:true the same anchor returns the anchor + OLDER
 	// messages (still oldest-first), so the cursor walks backward through history.
 	// message_seq=0 stays the "from latest" sentinel and returns the newest window.
-	data, err := o.call("get_group_msg_history", map[string]any{
+	data, err := o.callContext(ctx, "get_group_msg_history", map[string]any{
 		"group_id":     groupID,
 		"message_seq":  beforeSeq,
 		"count":        count,
@@ -496,22 +576,23 @@ func (o *OneBot) GetGroupMsgHistory(groupID int64, count int, beforeSeq int64) (
 	// Resolve @-mention names from a single member-list call, and quoted
 	// originals from get_msg (cached per batch). Both are best-effort: on any
 	// failure the UI falls back to the raw QQ id / a "[消息]" stub.
-	members := o.GetGroupMemberList(groupID)
+	members := o.GetGroupMemberListContext(ctx, groupID)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	nameOf := func(id int64) string { return members[id] }
-	quoteCache := map[int64]*ReplyQuote{}
+	quoteCache := o.prefetchQuotes(ctx, env.Messages)
 	quoteOf := func(id int64) *ReplyQuote {
 		if id == 0 {
 			return nil
 		}
-		if q, ok := quoteCache[id]; ok {
-			return q
-		}
-		q := o.GetMsg(id)
-		quoteCache[id] = q
-		return q
+		return quoteCache[id]
 	}
 	out := make([]HistoryMsg, 0, len(env.Messages))
 	for _, raw := range env.Messages {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		hm := HistoryMsg{
 			MessageID:  toInt64(raw["message_id"]),
 			MessageSeq: toInt64(raw["message_seq"]),
@@ -663,8 +744,12 @@ func buildSegments(msg any, selfID int64, names func(int64) string, quote func(i
 // empty map so callers fall back to the raw QQ id. Used to resolve @-mention
 // names in history without a per-mention round-trip.
 func (o *OneBot) GetGroupMemberList(groupID int64) map[int64]string {
+	return o.GetGroupMemberListContext(context.Background(), groupID)
+}
+
+func (o *OneBot) GetGroupMemberListContext(ctx context.Context, groupID int64) map[int64]string {
 	out := map[int64]string{}
-	data, err := o.call("get_group_member_list", map[string]any{"group_id": groupID})
+	data, err := o.callContext(ctx, "get_group_member_list", map[string]any{"group_id": groupID})
 	if err != nil {
 		return out
 	}
@@ -690,7 +775,11 @@ func (o *OneBot) GetGroupMemberList(groupID int64) map[int64]string {
 // flattened text) for rendering reply segments. Best-effort: returns a "[消息]"
 // stub on any failure so the UI still shows something for the quoted original.
 func (o *OneBot) GetMsg(messageID int64) *ReplyQuote {
-	data, err := o.call("get_msg", map[string]any{"message_id": messageID})
+	return o.GetMsgContext(context.Background(), messageID)
+}
+
+func (o *OneBot) GetMsgContext(ctx context.Context, messageID int64) *ReplyQuote {
+	data, err := o.callContext(ctx, "get_msg", map[string]any{"message_id": messageID})
 	if err != nil {
 		return &ReplyQuote{Text: "[消息]"}
 	}
@@ -713,6 +802,79 @@ func (o *OneBot) GetMsg(messageID int64) *ReplyQuote {
 		q.Text = "[消息]"
 	}
 	return q
+}
+
+func (o *OneBot) prefetchQuotes(ctx context.Context, messages []map[string]any) map[int64]*ReplyQuote {
+	ids := make(map[int64]struct{})
+	for _, raw := range messages {
+		collectReplyIDs(raw["message"], ids)
+	}
+	quotes := make(map[int64]*ReplyQuote, len(ids))
+	if len(ids) == 0 {
+		return quotes
+	}
+	jobs := make(chan int64)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	workers := 8
+	if len(ids) < workers {
+		workers = len(ids)
+	}
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case id, ok := <-jobs:
+					if !ok {
+						return
+					}
+					q := o.GetMsgContext(ctx, id)
+					mu.Lock()
+					quotes[id] = q
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for id := range ids {
+		select {
+		case jobs <- id:
+		case <-ctx.Done():
+			break
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return quotes
+}
+
+func collectReplyIDs(msg any, ids map[int64]struct{}) {
+	arr, ok := msg.([]any)
+	if !ok {
+		return
+	}
+	for _, seg := range arr {
+		sm, ok := seg.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := sm["type"].(string)
+		if typ != "reply" {
+			continue
+		}
+		if data, _ := sm["data"].(map[string]any); data != nil {
+			if id := toInt64(data["id"]); id > 0 {
+				ids[id] = struct{}{}
+			}
+		}
+	}
 }
 
 // GetGroupFileURL resolves a short-lived download URL for a group file. busid is
