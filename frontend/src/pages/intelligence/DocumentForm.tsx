@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@heroui/react'
 import { SectionCard } from '../../components/ui/SectionCard'
-import { Toggle } from '../../components/ui/Toggle'
+import { EnableSetting } from './EnableSetting'
 import { TextSetting } from '../../components/ui/TextSetting'
 import { NumberSetting } from '../../components/ui/NumberSetting'
 import { api, ApiError } from '../../lib/api'
@@ -18,6 +18,7 @@ export function DocumentForm({ initial }: { initial: DocumentConfig }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const pending = useRef(false)
   const dirty = JSON.stringify(config) !== saved
   const set = (patch: Partial<DocumentConfig>) => {
     setConfig((value) => ({ ...value, ...patch }))
@@ -25,6 +26,8 @@ export function DocumentForm({ initial }: { initial: DocumentConfig }) {
     setError('')
   }
   const save = async () => {
+    if (pending.current || !dirty) return
+    pending.current = true
     setSaving(true)
     setError('')
     setMessage('')
@@ -36,14 +39,24 @@ export function DocumentForm({ initial }: { initial: DocumentConfig }) {
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '保存失败，请重试')
     } finally {
+      pending.current = false
       setSaving(false)
     }
   }
   return (
-    <SectionCard title="附件阅读" description="提取群文件正文，让文件中的通知也能参与判断与摘要。">
-      <div className="flex flex-col gap-5">
-        <Toggle label="读取通知附件" description="DOCX、TXT、Markdown 在本地解析；PDF、DOC 等文件将上传到配置的 MinerU 服务。" isSelected={config.enabled} onChange={(enabled) => set({ enabled })} isDisabled={saving} />
-        <fieldset disabled={saving} className="flex min-w-0 flex-col gap-4">
+    <SectionCard
+      title="附件阅读"
+      description="提取群文件正文，让文件中的通知也能参与判断与摘要。"
+      footer={
+        <div className="flex flex-wrap items-center gap-3">
+          <Button size="sm" onPress={save} isPending={saving} isDisabled={!dirty || saving}>保存更改</Button>
+          <span role="status" className="text-xs text-success">{message}</span>
+        </div>
+      }
+    >
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-8">
+        <EnableSetting label="读取通知附件" description="DOCX、TXT、Markdown 在本地解析；PDF、DOC 等文件将上传到配置的 MinerU 服务。" isSelected={config.enabled} onChange={(enabled) => set({ enabled })} isDisabled={saving} />
+        <fieldset disabled={saving} className="grid min-w-0 gap-3">
           <div className="grid gap-4 sm:grid-cols-2">
             <TextSetting label="MinerU API 地址" value={config.baseUrl} onChange={(baseUrl) => set({ baseUrl })} type="url" placeholder="https://mineru.net/api/v4" />
             <TextSetting label="MinerU API Key" value={config.apiKey} onChange={(apiKey) => set({ apiKey })} type="password" description="留空保留现有密钥；保存后不再回显" />
@@ -54,12 +67,8 @@ export function DocumentForm({ initial }: { initial: DocumentConfig }) {
             <NumberSetting label="正文字符上限" value={config.maxTextChars} onChange={(maxTextChars) => set({ maxTextChars })} minValue={256} maxValue={32000} step={1000} />
           </div>
         </fieldset>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onPress={save} isPending={saving} isDisabled={!dirty}>保存更改</Button>
-          <span aria-live="polite" className="text-sm text-success">{message}</span>
-        </div>
-        {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
       </div>
+      {error ? <p role="alert" className="mt-3 text-sm text-danger">{error}</p> : null}
     </SectionCard>
   )
 }

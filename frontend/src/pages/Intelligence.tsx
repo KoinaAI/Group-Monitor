@@ -23,10 +23,12 @@ export default function Intelligence() {
           <Loader label="正在加载配置…" />
         )
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className="grid items-start gap-4 xl:grid-cols-2">
           <LLMForm initial={config.llm} />
           <JevForm initial={config.jev} />
-          <DocumentForm initial={config.documents} />
+          <div className="min-w-0 xl:col-span-2">
+            <DocumentForm initial={config.documents} />
+          </div>
         </div>
       )}
     </Page>
