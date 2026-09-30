@@ -20,9 +20,10 @@ export function EnableSetting({
       isSelected={isSelected}
       isDisabled={isDisabled}
       onChange={onChange}
-      className="w-full gap-1"
+      variant="secondary"
+      className="w-full gap-1 bg-transparent shadow-none"
     >
-      <CellSwitch.Trigger className="w-full justify-between px-0">
+      <CellSwitch.Trigger className="w-full justify-between rounded-none bg-transparent px-0 shadow-none">
         <CellSwitch.Label>{label}</CellSwitch.Label>
         <CellSwitch.Control />
       </CellSwitch.Trigger>

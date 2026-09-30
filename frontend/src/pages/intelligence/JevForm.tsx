@@ -67,11 +67,13 @@ export function JevForm({ initial }: { initial: JevConfig }) {
       title="Jev 意图门控"
       description="逐条预筛消息，并在归档前确认正式通知；判定失败时不写入归档"
       className="min-w-0"
+      actions={
+        <Button size="sm" variant="secondary" onPress={test} isPending={testing} isDisabled={busy}>
+          测试连接
+        </Button>
+      }
       footer={
         <div className="flex w-full flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" onPress={test} isPending={testing} isDisabled={busy}>
-            测试
-          </Button>
           {dirty ? (
             <Button size="sm" onPress={save} isPending={saving} isDisabled={busy}>
               保存更改

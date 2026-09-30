@@ -3,7 +3,6 @@ import { Button } from '@heroui/react'
 import { SectionCard } from '../../components/ui/SectionCard'
 import { EnableSetting } from './EnableSetting'
 import { TextSetting } from '../../components/ui/TextSetting'
-import { NumberSetting } from '../../components/ui/NumberSetting'
 import { IntentChip } from '../../components/ui/IntentChip'
 import { api, ApiError } from '../../lib/api'
 import { urgencyIntent, urgencyLabel } from '../../lib/labels'
@@ -67,13 +66,15 @@ export function LLMForm({ initial }: { initial: LLMConfig }) {
   return (
     <SectionCard
       title="LLM 蒸馏"
-      description="将聚合消息压缩为结构化摘要后再推送"
+      description="将聚合消息压缩为结构化摘要后再推送；采样参数由服务商决定"
       className="min-w-0"
+      actions={
+        <Button size="sm" variant="secondary" onPress={test} isPending={testing} isDisabled={busy}>
+          测试连接
+        </Button>
+      }
       footer={
         <div className="flex w-full flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" onPress={test} isPending={testing} isDisabled={busy}>
-            测试
-          </Button>
           {dirty ? (
             <Button size="sm" onPress={save} isPending={saving} isDisabled={busy}>
               保存更改
@@ -115,32 +116,6 @@ export function LLMForm({ initial }: { initial: LLMConfig }) {
             placeholder="sk-…"
             type="password"
           />
-          <div className="grid gap-4 sm:grid-cols-3">
-            <NumberSetting
-              label="超时（秒）"
-              value={llm.timeoutSec}
-              onChange={(v) => set({ timeoutSec: v })}
-              minValue={1}
-              maxValue={120}
-            />
-            <NumberSetting
-              label="最大 Token"
-              value={llm.maxTokens}
-              onChange={(v) => set({ maxTokens: v })}
-              minValue={64}
-              maxValue={8192}
-              step={64}
-            />
-            <NumberSetting
-              label="温度"
-              value={llm.temperature}
-              onChange={(v) => set({ temperature: v })}
-              minValue={0}
-              maxValue={2}
-              step={0.1}
-              formatOptions={{ minimumFractionDigits: 1, maximumFractionDigits: 1 }}
-            />
-          </div>
         </fieldset>
         {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
         {res ? (
