@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Generated from public/skills/xunshu-api by predev/prebuild.
+public/skills/xunshu-api.zip
+public/skills/install.py
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
