@@ -64,7 +64,7 @@ export default function Login() {
   return (
     <Shell
       footer={
-        <p className="mt-6 flex items-center justify-center gap-2 text-xs text-muted">
+        <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <StatusDot tone={status.onebotConnected ? 'success' : 'muted'} />
           {status.onebotConnected ? 'NapCat 已连接' : 'NapCat 未连接'}
           <span className="text-muted">·</span>
@@ -73,9 +73,10 @@ export default function Login() {
       }
     >
       {both ? (
-        <div className="mb-5 flex justify-center">
+        <div className="mb-5 flex">
           <Segment
             aria-label="登录方式"
+            className="w-full"
             selectedKey={mode}
             onSelectionChange={(key) => setMode(key as 'otp' | 'password')}
           >
@@ -106,29 +107,37 @@ export default function Login() {
   )
 }
 
-// Centered brand + card scaffold shared by every auth state.
+// Keep service context beside the compact auth form on wider screens.
 function Shell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
-    <div className="relative flex min-h-dvh items-center justify-center overflow-hidden bg-background p-6">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-24 left-1/2 size-72 -translate-x-1/2 rounded-full bg-accent/15 blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-16 right-0 size-56 rounded-full bg-accent/10 blur-3xl"
-      />
-      <div className="relative w-full max-w-sm">
-        <div className="mb-6 flex flex-col items-center gap-3 text-center">
-          <img src="/brand-mark.svg" alt="" className="size-12" />
-          <div>
-            <h1 className="text-lg font-semibold text-foreground">讯枢</h1>
-            <p className="text-sm text-muted">消息通知与归档</p>
+    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8 sm:px-6">
+      <Card className="w-full max-w-3xl gap-0 overflow-hidden p-0 sm:grid sm:grid-cols-[0.85fr_1.15fr]">
+        <div className="flex flex-col gap-6 bg-surface-secondary p-6 sm:p-8">
+          <div className="flex items-center gap-3">
+            <img src="/brand-mark.svg" alt="" className="size-10" />
+            <div>
+              <p className="text-lg font-semibold text-foreground">讯枢</p>
+              <p className="text-xs text-muted">消息通知与归档</p>
+            </div>
           </div>
+          <div className="hidden sm:block">
+            <p className="text-xl font-semibold leading-snug text-foreground">让重要消息，<br />及时抵达。</p>
+            <ul className="mt-5 space-y-3 text-sm text-muted">
+              <li className="flex items-center gap-2.5"><AppIcon name="connection" className="size-4 shrink-0" />连接信息源与群聊</li>
+              <li className="flex items-center gap-2.5"><AppIcon name="intelligence" className="size-4 shrink-0" />按规则筛选重要消息</li>
+              <li className="flex items-center gap-2.5"><AppIcon name="bell" className="size-4 shrink-0" />集中管理通知与归档</li>
+            </ul>
+          </div>
+          {footer ? <div className="sm:mt-auto">{footer}</div> : null}
         </div>
-        <Card variant="default">{children}</Card>
-        {footer}
-      </div>
-    </div>
+        <div className="p-6 sm:p-8">
+          <div className="mb-6">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">登录讯枢</h1>
+            <p className="mt-1 text-sm text-muted">进入你的消息工作台</p>
+          </div>
+          {children}
+        </div>
+      </Card>
+    </main>
   )
 }
