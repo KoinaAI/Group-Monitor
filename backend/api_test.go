@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -350,6 +351,37 @@ func TestAPIMediaRangeAndVoice(t *testing.T) {
 	w = serveAPI(a, "GET", "/api/groups/voice?file=voice.amr", nil, cookie)
 	if w.Code != 200 || w.Body.String() != "MP3" || w.Header().Get("Content-Type") != "audio/mpeg" {
 		t.Fatalf("voice=%d headers=%v body=%q", w.Code, w.Header(), w.Body.String())
+	}
+}
+
+// TestAPIMediaSwapsStaleRKey verifies the media proxy replaces the stale rkey a
+// history URL carries with a fresh group rkey fetched from NapCat before hitting
+// the CDN — the fix for images rendering as broken placeholders.
+func TestAPIMediaSwapsStaleRKey(t *testing.T) {
+	a := newTestAPI(t)
+	cookie := sessionCookieFor(t, a)
+	a.ob.httpBase = "http://napcat.local"
+	var gotCDN string
+	a.ob.client.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path == "/get_rkey" {
+			return &http.Response{StatusCode: 200, Header: http.Header{}, Request: r,
+				Body: io.NopCloser(strings.NewReader(
+					`{"status":"ok","retcode":0,"data":[{"type":"private","rkey":"&rkey=PRIV","ttl":3420},{"type":"group","rkey":"&rkey=FRESH","ttl":3420}]}`))}, nil
+		}
+		gotCDN = r.URL.String()
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/png"}},
+			Body: io.NopCloser(strings.NewReader("IMG")), Request: r}, nil
+	})
+	u := "https://gchat.qpic.cn/download?appid=1407&fileid=ABC&rkey=STALE&spec=0"
+	w := serveAPI(a, "GET", "/api/groups/media?u="+url.QueryEscape(u), nil, cookie)
+	if w.Code != 200 || w.Body.String() != "IMG" {
+		t.Fatalf("media=%d body=%q", w.Code, w.Body.String())
+	}
+	if !strings.Contains(gotCDN, "rkey=FRESH") || strings.Contains(gotCDN, "STALE") {
+		t.Fatalf("expected fresh group rkey in upstream url, got %q", gotCDN)
+	}
+	if !strings.Contains(gotCDN, "fileid=ABC") || !strings.Contains(gotCDN, "appid=1407") {
+		t.Fatalf("other query params lost: %q", gotCDN)
 	}
 }
 

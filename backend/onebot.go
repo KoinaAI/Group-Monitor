@@ -50,6 +50,10 @@ type OneBot struct {
 
 	seenMu         sync.Mutex
 	seenMessageIDs map[int64]time.Time
+
+	rkeyMu      sync.Mutex
+	groupRKey   string    // cached bare group rkey token (no "rkey=" prefix)
+	rkeyExpires time.Time // when the cached group rkey should be refreshed
 }
 
 // GroupMessage is the normalised form of an OneBot group message event.
@@ -956,6 +960,53 @@ func (o *OneBot) GetRecordMP3(file string) ([]byte, error) {
 		return nil, fmt.Errorf("解码音频失败：%w", err)
 	}
 	return raw, nil
+}
+
+// GroupRKey returns a currently-valid QQ "rkey" access token for group media
+// download URLs, fetched from NapCat's get_rkey and cached until shortly before
+// it expires. get_group_msg_history hands back image/file URLs whose embedded
+// rkey is frequently already stale — the qpic CDN then rejects the fetch with
+// HTTP 400 (X-ErrNo -1317), so an inline <img> renders broken. handleGroupMedia
+// swaps this fresh token in before proxying. The returned value is the bare
+// token (no "rkey=" prefix); "" means none is available.
+func (o *OneBot) GroupRKey(ctx context.Context) string {
+	o.rkeyMu.Lock()
+	defer o.rkeyMu.Unlock()
+	if o.groupRKey != "" && time.Now().Before(o.rkeyExpires) {
+		return o.groupRKey
+	}
+	data, err := o.callContext(ctx, "get_rkey", map[string]any{})
+	if err != nil {
+		return o.groupRKey // fall back to a possibly-stale cached token
+	}
+	var rows []struct {
+		Type string `json:"type"`
+		RKey string `json:"rkey"`
+		TTL  int64  `json:"ttl"`
+	}
+	if err := json.Unmarshal(data, &rows); err != nil {
+		return o.groupRKey
+	}
+	for _, row := range rows {
+		if row.Type != "group" {
+			continue
+		}
+		// NapCat returns the token pre-formatted as "&rkey=<token>"; store the
+		// bare token so callers can drop it into a url.Values cleanly.
+		tok := strings.TrimPrefix(strings.TrimPrefix(row.RKey, "&"), "rkey=")
+		if tok == "" {
+			break
+		}
+		o.groupRKey = tok
+		ttl := time.Duration(row.TTL) * time.Second
+		if ttl <= time.Minute {
+			ttl = 5 * time.Minute
+		}
+		// Refresh a minute early so a fetch never races the CDN's expiry check.
+		o.rkeyExpires = time.Now().Add(ttl - time.Minute)
+		return o.groupRKey
+	}
+	return o.groupRKey
 }
 
 // ---- helpers ----

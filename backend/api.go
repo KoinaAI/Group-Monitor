@@ -417,6 +417,16 @@ func (a *API) handleGroupMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, "非法媒体地址")
 		return
 	}
+	// History URLs from NapCat often embed an already-expired rkey; the qpic CDN
+	// then answers 400 (X-ErrNo -1317) and the <img> renders broken. Swap in a
+	// fresh, cached group rkey whenever the link carries one. The token is
+	// base64url (no reserved chars), so re-encoding the query is a safe no-op.
+	if q := target.Query(); q.Get("rkey") != "" {
+		if tok := a.ob.GroupRKey(r.Context()); tok != "" {
+			q.Set("rkey", tok)
+			target.RawQuery = q.Encode()
+		}
+	}
 	req, err := http.NewRequest(http.MethodGet, target.String(), nil)
 	if err != nil {
 		writeErr(w, 400, "非法媒体地址")
