@@ -39,7 +39,6 @@ body {
   --navbar-height: 56px;
 }
 .workspace-page { overflow-wrap: anywhere; }
-.workspace-page .card { align-self: start; }
 .workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { font-weight: 600; }
 .workspace-shell .app-layout__toolbar { position: relative; top: auto; }
 .workspace-shell .app-layout__main { scroll-padding-top: 1.5rem; }

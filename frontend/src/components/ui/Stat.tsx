@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Card } from '@heroui/react'
+import { KPI } from '@heroui-pro/react/kpi'
 import { AppIcon, type IconName } from '../../lib/icons'
 import { cn } from '../../lib/cn'
 
@@ -27,7 +27,7 @@ export function Stat({
   hint?: ReactNode
 }) {
   return (
-    <Card variant="default">
+    <KPI className="min-w-0">
       <div className="flex items-center gap-3">
         <div
           className={cn(
@@ -43,6 +43,6 @@ export function Stat({
           {hint ? <p className="truncate text-xs text-muted">{hint}</p> : null}
         </div>
       </div>
-    </Card>
+    </KPI>
   )
 }
