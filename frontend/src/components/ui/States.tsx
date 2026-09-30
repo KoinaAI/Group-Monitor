@@ -42,6 +42,7 @@ export function InlineError({
 }) {
   return (
     <div
+      role="alert"
       className={cn(
         'flex flex-col items-center justify-center gap-3 px-4 py-6 text-center',
         className,

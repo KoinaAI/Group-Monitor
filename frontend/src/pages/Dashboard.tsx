@@ -51,7 +51,7 @@ export default function Dashboard() {
   }
 
   return (
-    <Page>
+    <Page className="space-y-4">
       <PageHeader
         title="总览"
         description="关注待办通知，掌握群消息处理进度。"

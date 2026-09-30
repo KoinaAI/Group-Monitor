@@ -127,7 +127,7 @@ function SidebarInner() {
         ))}
       </Sidebar.Content>
       <Sidebar.Footer>
-        <div className="flex justify-center py-2"><ThemeToggle /></div>
+        <div className="flex justify-center py-2 group-data-[state=collapsed]:hidden"><ThemeToggle /></div>
         <AccountFooter />
       </Sidebar.Footer>
     </>

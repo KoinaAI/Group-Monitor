@@ -45,3 +45,9 @@ body {
 @media (max-width: 640px) {
   .workspace-page .segment { max-width: 100%; flex-wrap: wrap; }
 }
+
+/* ActionBar is fixed; center it over the content remaining beside the rail. */
+@media (min-width: 769px) {
+  .workspace-shell [data-slot="action-bar"] { inset-inline-start: calc(50% + 120px); }
+  .workspace-shell:has([data-slot="sidebar"][data-state="collapsed"]) [data-slot="action-bar"] { inset-inline-start: calc(50% + 24px); }
+}
