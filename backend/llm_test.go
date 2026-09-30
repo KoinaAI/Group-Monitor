@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCallLLMStreamingAndRequest(t *testing.T) {
@@ -100,4 +102,67 @@ func TestCallLLMRejectsOversizedResponse(t *testing.T) {
 	if _, _, err := callLLM(LLMConfig{BaseURL: srv.URL}, "batch"); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("oversized response error=%v", err)
 	}
+}
+
+func TestCallLLMFirstResponseTimeoutOnlyCoversInitialStreamRead(t *testing.T) {
+	const verdict = `{"useful":true,"level":2,"title":"考试通知","summary":"明日考试"}`
+
+	t.Run("times out before first stream bytes", func(t *testing.T) {
+		started := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			close(started)
+			<-r.Context().Done()
+		}))
+		defer srv.Close()
+
+		began := time.Now()
+		_, _, err := callLLMContext(context.Background(), LLMConfig{BaseURL: srv.URL, Timeout: 1}, "batch")
+		if err == nil || !strings.Contains(err.Error(), "first response timeout") {
+			t.Fatalf("error = %v, want first-response timeout", err)
+		}
+		if elapsed := time.Since(began); elapsed < 850*time.Millisecond || elapsed > 3*time.Second {
+			t.Fatalf("timeout elapsed = %s, want about one second", elapsed)
+		}
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("server did not receive the request")
+		}
+	})
+
+	t.Run("does not cut off an active stream", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			writeChunk := func(content string) {
+				payload, _ := json.Marshal(map[string]any{
+					"choices": []any{map[string]any{"delta": map[string]string{"content": content}}},
+				})
+				fmt.Fprintf(w, "data: %s\n\n", payload)
+			}
+			writeChunk(`{"useful":true,"level":2,`)
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1200 * time.Millisecond)
+			writeChunk(`"title":"考试通知","summary":"明日考试"}`)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}))
+		defer srv.Close()
+
+		began := time.Now()
+		got, raw, err := callLLMContext(context.Background(), LLMConfig{BaseURL: srv.URL, Timeout: 1}, "batch")
+		if err != nil {
+			t.Fatalf("active stream failed: %v", err)
+		}
+		if got.Title != "考试通知" || raw != verdict {
+			t.Fatalf("stream verdict = %+v raw=%q", got, raw)
+		}
+		if elapsed := time.Since(began); elapsed < 1100*time.Millisecond {
+			t.Fatalf("stream returned too early after %s", elapsed)
+		}
+	})
 }

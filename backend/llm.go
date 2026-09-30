@@ -144,8 +144,12 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 	if to <= 0 {
 		to = 45
 	}
-	ctx, cancel := context.WithTimeout(parent, time.Duration(to)*time.Second)
+	// The configured timeout is a first-response budget. Once the endpoint has
+	// emitted the first response bytes, an intentionally long stream must be
+	// allowed to finish instead of being truncated by the same deadline.
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
+	firstResponseDeadline := time.Now().Add(time.Duration(to) * time.Second)
 
 	body := chatReq{
 		Model:       cfg.Model,
@@ -171,13 +175,50 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
-	resp, err := noRedirectClient(http.DefaultClient).Do(req)
+	// Do the request under the first-response budget as well. A server that
+	// never sends response headers must not leave the classifier blocked
+	// forever. The response channel is buffered so the worker can finish
+	// cleanly if the timeout path cancels the request.
+	type doResult struct {
+		resp *http.Response
+		err  error
+	}
+	done := make(chan doResult, 1)
+	go func() {
+		resp, err := noRedirectClient(http.DefaultClient).Do(req)
+		if err == nil && ctx.Err() != nil && resp != nil {
+			_ = resp.Body.Close()
+			resp = nil
+		}
+		done <- doResult{resp: resp, err: err}
+	}()
+	timer := time.NewTimer(time.Until(firstResponseDeadline))
+	defer timer.Stop()
+	var resp *http.Response
+	select {
+	case result := <-done:
+		resp, err = result.resp, result.err
+	case <-timer.C:
+		cancel()
+		return res, "", fmt.Errorf("LLM first response timeout after %ds", to)
+	case <-parent.Done():
+		cancel()
+		return res, "", parent.Err()
+	}
 	if err != nil {
 		return res, "", err
 	}
+	if resp == nil {
+		return res, "", fmt.Errorf("LLM first response unavailable")
+	}
 	defer resp.Body.Close()
+	responseBody := &firstResponseReader{
+		reader:   resp.Body,
+		deadline: firstResponseDeadline,
+		cancel:   cancel,
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		raw, _ := io.ReadAll(io.LimitReader(responseBody, 4096))
 		var upstream chatResp
 		if json.Unmarshal(raw, &upstream) == nil && upstream.Error != nil {
 			return res, "", fmt.Errorf("LLM %d: %s", resp.StatusCode, upstream.Error.Message)
@@ -187,13 +228,13 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 
 	var content string
 	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
-		content, err = readSSEContent(resp.Body)
+		content, err = readSSEContent(responseBody)
 		if err != nil {
 			return res, content, err
 		}
 	} else {
 		// Fallback: the endpoint returned a single JSON body despite stream:true.
-		raw, err := io.ReadAll(io.LimitReader(resp.Body, maxLLMResponseBytes+1))
+		raw, err := io.ReadAll(io.LimitReader(responseBody, maxLLMResponseBytes+1))
 		if err != nil {
 			return res, "", fmt.Errorf("read LLM response: %w", err)
 		}
@@ -221,6 +262,55 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 		return res, content, err
 	}
 	return parsed, content, nil
+}
+
+// firstResponseReader applies the LLM timeout only to the first read. It
+// starts the underlying read in a worker because net/http response bodies do
+// not expose a portable read deadline. After the first bytes are available it
+// delegates directly, so a slow but active stream is never cut off by this
+// timeout. The read buffer is copied through a private slice to avoid a late
+// network read writing into Scanner's buffer after a timeout.
+type firstResponseReader struct {
+	reader   io.Reader
+	deadline time.Time
+	cancel   context.CancelFunc
+	started  bool
+}
+
+func (r *firstResponseReader) Read(p []byte) (int, error) {
+	if r.started {
+		return r.reader.Read(p)
+	}
+	r.started = true
+	remaining := time.Until(r.deadline)
+	if remaining <= 0 {
+		r.cancel()
+		return 0, fmt.Errorf("LLM first response timeout")
+	}
+
+	buf := make([]byte, len(p))
+	type readResult struct {
+		n   int
+		err error
+	}
+	result := make(chan readResult, 1)
+	go func() {
+		n, err := r.reader.Read(buf)
+		result <- readResult{n: n, err: err}
+	}()
+	timer := time.NewTimer(remaining)
+	defer timer.Stop()
+	select {
+	case got := <-result:
+		copy(p, buf[:got.n])
+		return got.n, got.err
+	case <-timer.C:
+		r.cancel()
+		if closer, ok := r.reader.(io.Closer); ok {
+			_ = closer.Close()
+		}
+		return 0, fmt.Errorf("LLM first response timeout")
+	}
 }
 
 // readSSEContent consumes an OpenAI-style streaming response, concatenating the
