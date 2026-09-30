@@ -59,6 +59,7 @@ export interface BackupStatus {
 
 export interface DocumentConfig {
   enabled: boolean
+  mode: 'agent' | 'api'
   baseUrl: string
   apiKey: string
   timeoutSec: number
@@ -345,7 +346,7 @@ export interface SourceStatus { sourceId: string; accountId: string; connected: 
 export interface NotificationTarget {
   id: string; name: string; kind: 'ntfy' | 'bark'; enabled: boolean; url: string
   topic?: string; token?: string; deviceKey?: string; group?: string
-  minLevel: number; accountIds?: string[]
+  note?: string; minLevel: number; accountIds?: string[]
 }
 
 export interface AgentKey { id: string; name: string; accountIds: string[]; createdAt: number }
