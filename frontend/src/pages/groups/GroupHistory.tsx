@@ -615,7 +615,7 @@ export default function GroupHistory() {
             ref={scrollRef}
             aria-label="群聊历史消息"
             tabIndex={0}
-            className="h-[calc(100dvh-15rem)] min-h-64 max-h-[52rem] overflow-y-auto overscroll-contain px-3 pb-4 sm:px-5"
+            className={`overflow-y-auto overscroll-contain px-3 pb-4 sm:px-5 ${msgs.length < 6 ? 'min-h-44 max-h-96' : 'h-[calc(100dvh-15rem)] min-h-64 max-h-[52rem]'}`}
           >
             <div ref={topRef} className="flex justify-center py-4">
               {loadingMore ? (
@@ -642,5 +642,4 @@ export default function GroupHistory() {
     </Page>
   )
 }
-
 

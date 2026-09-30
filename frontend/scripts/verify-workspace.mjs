@@ -64,6 +64,19 @@ try {
       }
     }
   }
+  // Capture the same route matrix with the persisted dark theme so surface
+  // contrast and compact spacing are checked in both color schemes.
+  await page.evaluate(() => localStorage.setItem('nap-theme', 'dark'))
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 960 })
+    for (const route of routes) {
+      await page.goto(base + route)
+      await page.locator('h1').first().waitFor()
+      await page.waitForTimeout(120)
+      const name = route === '/' ? 'overview' : route.slice(1).replaceAll('/', '-')
+      await page.screenshot({ path: `${out}/${width}-dark-${name}.png` })
+    }
+  }
   await page.setViewportSize({ width: 1440, height: 960 })
   await page.goto(base + '/')
   await page.getByRole('button', { name: '搜索页面', exact: true }).click()
