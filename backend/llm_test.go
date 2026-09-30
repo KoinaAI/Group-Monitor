@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,9 +18,22 @@ func TestCallLLMStreamingAndRequest(t *testing.T) {
 		if r.URL.Path != "/v1/chat/completions" || r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer secret" {
 			t.Errorf("unexpected LLM request: %s %s auth=%q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
 		}
-		var req chatReq
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
 			t.Error(err)
+			return
+		}
+		var req chatReq
+		if err := json.Unmarshal(payload, &req); err != nil {
+			t.Error(err)
+		}
+		var wire map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &wire); err != nil {
+			t.Error(err)
+		} else if _, ok := wire["temperature"]; ok {
+			t.Error("LLM request must use provider temperature default")
+		} else if _, ok := wire["max_tokens"]; ok {
+			t.Error("LLM request must use provider max_tokens default")
 		}
 		if !req.Stream || req.Model != "model" || len(req.Messages) != 2 || req.Messages[0].Role != "system" || req.Messages[1].Content != "group batch" {
 			t.Errorf("request contract changed: %+v", req)
@@ -30,7 +44,7 @@ func TestCallLLMStreamingAndRequest(t *testing.T) {
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
-	got, raw, err := callLLM(LLMConfig{BaseURL: srv.URL + "/v1/", APIKey: "secret", Model: "model"}, "group batch")
+	got, raw, err := callLLM(LLMConfig{BaseURL: srv.URL + "/v1/", APIKey: "secret", Model: "model", Temp: 0.2, MaxTok: 4096}, "group batch")
 	if err != nil {
 		t.Fatal(err)
 	}

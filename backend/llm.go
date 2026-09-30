@@ -75,10 +75,12 @@ type LLMResult struct {
 }
 
 type chatReq struct {
-	Model       string        `json:"model"`
-	Messages    []chatMsg     `json:"messages"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
+	Model    string    `json:"model"`
+	Messages []chatMsg `json:"messages"`
+	// Kept for decoding/config compatibility, but never sent to providers.
+	// The provider's system defaults control sampling and output length.
+	Temperature float64       `json:"-"`
+	MaxTokens   int           `json:"-"`
 	Stream      bool          `json:"stream"`
 	Tools       []historyTool `json:"tools,omitempty"`
 	ToolChoice  string        `json:"tool_choice,omitempty"`
@@ -152,10 +154,8 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 	firstResponseDeadline := time.Now().Add(time.Duration(to) * time.Second)
 
 	body := chatReq{
-		Model:       cfg.Model,
-		Temperature: cfg.Temp,
-		MaxTokens:   cfg.MaxTok,
-		Stream:      true,
+		Model:  cfg.Model,
+		Stream: true,
 		Messages: []chatMsg{
 			{Role: "system", Content: systemPrompt},
 			{Role: "user", Content: userContent},

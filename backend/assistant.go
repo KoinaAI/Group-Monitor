@@ -148,11 +148,7 @@ func (a *Assistant) answer(ctx context.Context, cfg LLMConfig, userID int64, que
 	if len([]rune(question)) > assistantQuestionChars {
 		return "", fmt.Errorf("question too long")
 	}
-	maxTokens := cfg.MaxTok
-	if maxTokens <= 0 || maxTokens > 2048 {
-		maxTokens = 2048
-	}
-	body := chatReq{Model: cfg.Model, Temperature: cfg.Temp, MaxTokens: maxTokens,
+	body := chatReq{Model: cfg.Model,
 		Messages: []chatMsg{{Role: "system", Content: assistantPrompt + "\n当前北京时间：" + messageTimestamp(time.Now().Unix())}, {Role: "user", Content: question}},
 		Tools:    assistantTools, ToolChoice: "auto"}
 	seenIDs := make(map[string]bool)

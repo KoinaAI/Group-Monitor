@@ -74,7 +74,7 @@ func callLLMWithHistoryContext(parent context.Context, cfg LLMConfig, transcript
 	ctx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Second)
 	defer cancel()
 	body := chatReq{
-		Model: cfg.Model, Temperature: cfg.Temp, MaxTokens: cfg.MaxTok,
+		Model:    cfg.Model,
 		Messages: []chatMsg{{Role: "system", Content: systemPrompt + historyPrompt}, {Role: "user", Content: transcript}},
 		Tools:    []historyTool{noticeSearchTool}, ToolChoice: "auto",
 	}
