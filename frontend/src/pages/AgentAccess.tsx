@@ -48,8 +48,8 @@ export default function AgentAccess() {
             <Label>可访问账号</Label>
             <Description>不选择时允许所有当前及未来账号。</Description>
             <div className="mt-2 flex flex-wrap gap-2">
-              {availableAccounts.map((account) => <CheckboxButtonGroup.Item key={account.id} value={account.id} aria-label={`${account.sourceName} / ${account.name}`}>
-                <CheckboxButtonGroup.Indicator />
+              {availableAccounts.map((account) => <CheckboxButtonGroup.Item key={account.id} value={account.id} aria-label={`${account.sourceName} / ${account.name}`} className="flex-row items-center gap-2 px-3 py-2">
+                <CheckboxButtonGroup.Indicator className="static" />
                 <CheckboxButtonGroup.ItemContent><span className="text-sm">{account.sourceName} / {account.name}</span></CheckboxButtonGroup.ItemContent>
               </CheckboxButtonGroup.Item>)}
             </div>
