@@ -40,6 +40,9 @@ func defaultDocumentConfig() DocumentConfig {
 }
 
 func documentMode(c DocumentConfig) string {
+	if strings.Contains(c.BaseURL, "/api/v4") && c.APIKey != "" {
+		return "api"
+	}
 	if strings.EqualFold(strings.TrimSpace(c.Mode), "api") {
 		return "api"
 	}

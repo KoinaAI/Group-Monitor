@@ -24,6 +24,7 @@ type NotificationTarget struct {
 	Token      string   `json:"token,omitempty"`
 	DeviceKey  string   `json:"deviceKey,omitempty"`
 	Group      string   `json:"group,omitempty"`
+	Note       string   `json:"note,omitempty"`
 	MinLevel   int      `json:"minLevel"`
 	AccountIDs []string `json:"accountIds,omitempty"`
 }
@@ -60,7 +61,7 @@ func validateNotificationTargets(targets []NotificationTarget) error {
 		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" || len(t.URL) > maxURLBytes {
 			return fmt.Errorf("notification server must be HTTP(S) without credentials, query or fragment")
 		}
-		if !validText(t.Topic, 256) || strings.ContainsAny(t.Topic, "/?# ") || !validText(t.Token, maxTokenBytes) || !validText(t.DeviceKey, maxTokenBytes) || !validText(t.Group, 128) {
+		if !validText(t.Topic, 256) || strings.ContainsAny(t.Topic, "/?# ") || !validText(t.Token, maxTokenBytes) || !validText(t.DeviceKey, maxTokenBytes) || !validText(t.Group, 128) || !validText(t.Note, 500) {
 			return fmt.Errorf("invalid notification credentials or topic")
 		}
 		if t.Enabled && (t.Kind == "ntfy" && t.Topic == "" || t.Kind == "bark" && t.DeviceKey == "") {

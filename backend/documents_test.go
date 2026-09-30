@@ -39,7 +39,7 @@ func documentOneBot(base string) *OneBot {
 	return o
 }
 
-func TestDocumentReaderLocalDOCXPreservesOriginalAndBoundsText(t *testing.T) {
+func TestDocumentReaderAgentPreservesOriginalAndBoundsText(t *testing.T) {
 	xml := `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>请于周五提交表格</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>姓名</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>` + strings.Repeat("中文", 500) + `</w:t></w:r></w:p></w:body></w:document>`
 	data := documentZIP(t, "word/document.xml", xml)
 	var srv *httptest.Server
@@ -56,6 +56,19 @@ func TestDocumentReaderLocalDOCXPreservesOriginalAndBoundsText(t *testing.T) {
 			fmt.Fprintf(w, `{"status":"ok","retcode":0,"data":{"url":%q}}`, srv.URL+"/file")
 		case "/file":
 			w.Write(data)
+		case "/api/v1/agent/parse/file":
+			if r.Header.Get("Authorization") != "" {
+				t.Error("Agent API must not receive a token")
+			}
+			fmt.Fprint(w, `{"code":0,"data":{"task_id":"agent-task","file_url":"`+srv.URL+`/agent-upload"}}`)
+		case "/agent-upload":
+			if r.Method != http.MethodPut {
+				t.Errorf("wrong Agent upload method: %s", r.Method)
+			}
+		case "/api/v1/agent/parse/agent-task":
+			fmt.Fprint(w, `{"code":0,"data":{"task_id":"agent-task","state":"done","markdown_url":"`+srv.URL+`/result.md"}}`)
+		case "/result.md":
+			fmt.Fprint(w, "请于周五提交表格\n姓名")
 		default:
 			t.Errorf("unexpected external API path %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -64,6 +77,7 @@ func TestDocumentReaderLocalDOCXPreservesOriginalAndBoundsText(t *testing.T) {
 	defer srv.Close()
 	cfg := defaultDocumentConfig()
 	cfg.Enabled = true
+	cfg.BaseURL = srv.URL + "/api/v1/agent"
 	cfg.MaxTextChars = 256
 	gm := GroupMessage{Text: "请阅读通知", GroupID: 42, Files: []HistoryFile{{Name: "通知.docx", FileID: "file-id"}}}
 	got := NewDocumentReader(documentOneBot(srv.URL)).Enrich(context.Background(), cfg, gm)

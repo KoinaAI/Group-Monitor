@@ -904,6 +904,12 @@ func (a *API) handleDocuments(w http.ResponseWriter, r *http.Request) {
 		if documents.APIKey == "" {
 			documents.APIKey = c.Documents.APIKey
 		}
+		if documents.Mode == "" {
+			documents.Mode = documentMode(documents)
+		}
+		if documents.BaseURL == "" {
+			documents.BaseURL = c.Documents.BaseURL
+		}
 		c.Documents = documents
 	})
 	if err != nil {

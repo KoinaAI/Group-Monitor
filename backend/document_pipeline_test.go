@@ -19,6 +19,16 @@ func TestFileOnlyNotificationIsReadBeforeClassification(t *testing.T) {
 			fmt.Fprintf(w, `{"status":"ok","retcode":0,"data":{"url":%q}}`, srv.URL+"/source")
 		case "/source":
 			w.Write(data)
+		case "/api/v1/agent/parse/file":
+			fmt.Fprintf(w, `{"code":0,"data":{"task_id":"agent-task","file_url":%q}}`, srv.URL+"/agent-upload")
+		case "/agent-upload":
+			if r.Method != http.MethodPut {
+				t.Errorf("unexpected Agent upload method %s", r.Method)
+			}
+		case "/api/v1/agent/parse/agent-task":
+			fmt.Fprintf(w, `{"code":0,"data":{"task_id":"agent-task","state":"done","markdown_url":%q}}`, srv.URL+"/result.md")
+		case "/result.md":
+			fmt.Fprint(w, "周五十点前提交奖学金材料")
 		case "/chat/completions":
 			body, _ := io.ReadAll(r.Body)
 			if !strings.Contains(string(body), "提交奖学金材料") {
@@ -39,6 +49,7 @@ func TestFileOnlyNotificationIsReadBeforeClassification(t *testing.T) {
 	defer srv.Close()
 	pipe, _ := testPipe(t, func(c *Config) {
 		c.Documents.Enabled = true
+		c.Documents.BaseURL = srv.URL + "/api/v1/agent"
 		c.LLM.Enabled = true
 		c.LLM.BaseURL = srv.URL
 		c.Jev.Enabled = true

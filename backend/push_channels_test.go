@@ -74,15 +74,18 @@ func TestNotificationAPISecretsAndAuthentication(t *testing.T) {
 	if w := serveAPI(a, "GET", "/api/notifications", nil, nil); w.Code != 401 {
 		t.Fatal("notification configuration is public")
 	}
-	body := []byte(`{"targets":[{"id":"phone","name":"手机","kind":"bark","enabled":true,"url":"https://api.day.app","deviceKey":"device-secret","minLevel":1}]}`)
+	body := []byte(`{"targets":[{"id":"phone","name":"手机","kind":"bark","enabled":true,"url":"https://api.day.app","deviceKey":"device-secret","note":"值班手机","minLevel":1}]}`)
 	w := serveAPI(a, "POST", "/api/notifications", body, cookie)
-	if w.Code != 200 || strings.Contains(w.Body.String(), "device-secret") {
+	if w.Code != 200 || strings.Contains(w.Body.String(), "device-secret") || a.store.Get().NotificationTargets[0].Note != "值班手机" {
 		t.Fatalf("save: %d %s", w.Code, w.Body.String())
 	}
-	body = []byte(`{"targets":[{"id":"phone","name":"手机","kind":"bark","enabled":true,"url":"https://api.day.app","deviceKey":"","minLevel":2}]}`)
+	body = []byte(`{"targets":[{"id":"phone","name":"手机","kind":"bark","enabled":true,"url":"https://api.day.app","deviceKey":"","note":"备用手机","minLevel":2}]}`)
 	w = serveAPI(a, "POST", "/api/notifications", body, cookie)
 	if w.Code != 200 || a.store.Get().NotificationTargets[0].DeviceKey != "device-secret" {
 		t.Fatal("blank input erased device key")
+	}
+	if a.store.Get().NotificationTargets[0].Note != "备用手机" {
+		t.Fatal("notification note was not persisted")
 	}
 	if w = serveAPI(a, "GET", "/api/config", nil, cookie); strings.Contains(w.Body.String(), "device-secret") {
 		t.Fatal("config leaked device key")
