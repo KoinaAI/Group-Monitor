@@ -11,9 +11,9 @@ import {
   Select,
   TextField,
 } from '@heroui/react'
+import { Stepper } from '@heroui-pro/react'
 import { AppIcon } from '../../lib/icons'
 import { api, ApiError } from '../../lib/api'
-import { cn } from '../../lib/cn'
 import { masterKindLabel, minLevelLabel } from '../../lib/labels'
 import { userAvatar } from '../../lib/qlogo'
 import type { Master, MasterKind, MinLevel } from '../../lib/types'
@@ -184,9 +184,25 @@ export function AddMasterWizard({
 
   return (
     <div className="flex flex-col gap-4">
+      <Stepper
+        aria-label="主人绑定进度"
+        currentStep={phase === 'input' ? 0 : phase === 'review' ? 1 : 2}
+        size="sm"
+      >
+        {['查询', '核对', '验证'].map((title) => (
+          <Stepper.Step key={title}>
+            <Stepper.Indicator />
+            <Stepper.Content>
+              <Stepper.Title>{title}</Stepper.Title>
+            </Stepper.Content>
+            <Stepper.Separator />
+          </Stepper.Step>
+        ))}
+      </Stepper>
       {phase === 'input' || !candidate ? (
         <div className="flex items-end gap-2">
-          <TextField aria-label="QQ 号" value={qid} onChange={setQid} className="flex-1">
+          <TextField aria-label="QQ 号" value={qid} onChange={setQid} className="min-w-0 flex-1">
+            <Label>QQ 号</Label>
             <Input placeholder="QQ 号码" variant="secondary" inputMode="numeric" />
           </TextField>
           <Button onPress={lookup} isPending={pending} isDisabled={!qid.trim()}>
@@ -196,8 +212,8 @@ export function AddMasterWizard({
         </div>
       ) : phase === 'review' ? (
         <>
-          <div className="flex items-center gap-3 rounded-xl bg-surface-secondary p-3">
-            <Avatar size="lg" className="shrink-0">
+          <div className="flex items-center gap-3">
+            <Avatar size="md" className="shrink-0">
               <Avatar.Image src={userAvatar(candidate.userId)} alt={candidate.nickname} loading="lazy" />
               <Avatar.Fallback>{(candidate.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
             </Avatar>
@@ -224,19 +240,18 @@ export function AddMasterWizard({
           <p className="text-xs text-muted">
             确认无误后，将向该 QQ 私信发送 3 分钟有效的验证码，对方回报后即可完成绑定。
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="tertiary" onPress={reset} isDisabled={pending}>
               重新输入
             </Button>
             <Button className="flex-1" onPress={sendCode} isPending={pending}>
-              <AppIcon name="mail" className="size-4" />
               确认此人并发送验证码
             </Button>
           </div>
         </>
       ) : (
         <>
-          <div className="flex items-center gap-3 rounded-xl bg-surface-secondary p-3">
+          <div className="flex items-center gap-3">
             <Avatar size="md" className="shrink-0">
               <Avatar.Image src={userAvatar(candidate.userId)} alt={candidate.nickname} loading="lazy" />
               <Avatar.Fallback>{(candidate.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
@@ -251,6 +266,7 @@ export function AddMasterWizard({
           <div className="flex flex-col items-center gap-3">
             <InputOTP
               autoFocus
+              aria-label="绑定验证码"
               maxLength={6}
               variant="secondary"
               value={code}
@@ -264,33 +280,35 @@ export function AddMasterWizard({
                   <InputOTP.Slot
                     key={i}
                     index={i}
-                    className="h-12 flex-1 rounded-xl border border-default bg-default text-base data-[active=true]:border-accent data-[active=true]:ring-2 data-[active=true]:ring-accent/30"
+                    className="min-w-0 flex-1"
                   />
                 ))}
               </InputOTP.Group>
             </InputOTP>
             {info ? <p className="text-xs text-muted">{info}</p> : null}
           </div>
-          <div className="flex items-center justify-between text-xs">
-            <button
-              type="button"
-              onClick={sendCode}
-              disabled={cooldown > 0 || pending}
-              className={cn('font-medium', cooldown > 0 ? 'text-muted' : 'text-accent hover:underline')}
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={sendCode}
+              isDisabled={cooldown > 0 || pending}
+              className="tabular-nums"
             >
               {cooldown > 0 ? `重新发送 (${cooldown}s)` : '重新发送'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              isDisabled={pending}
+              onPress={() => {
                 setPhase('review')
                 setErr(undefined)
                 setCode('')
               }}
-              className="text-muted hover:text-foreground"
             >
               返回
-            </button>
+            </Button>
           </div>
         </>
       )}

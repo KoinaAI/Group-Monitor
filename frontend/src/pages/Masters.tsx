@@ -79,11 +79,9 @@ export default function Masters() {
               <AppIcon name="send" className="size-4" />
               测试推送
             </Button>
-            {dirty ? (
-              <Button onPress={save} isPending={saving}>
-                保存更改
-              </Button>
-            ) : null}
+            <Button onPress={save} isPending={saving} isDisabled={!dirty}>
+              保存更改
+            </Button>
           </>
         }
       />
@@ -95,14 +93,17 @@ export default function Masters() {
           </Alert.Content>
         </Alert>
       ) : null}
-      <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <SectionCard
-          title="添加主人"
-          description="先核对头像与昵称，再向该 QQ 发送验证码完成绑定"
+          title="主人列表"
+          description={`共 ${masters.length} 位 · 按账号设置通知门槛`}
+          footer={
+            <p className="text-xs leading-relaxed text-muted">
+              完整主人可登录后台并管理机器人；仅通知账号只接收推送。
+              {dirty ? <span className="ml-1 text-warning">有未保存的更改。</span> : null}
+            </p>
+          }
         >
-          <AddMasterWizard existing={masters} onBound={onBound} />
-        </SectionCard>
-        <SectionCard title="主人列表" description={`共 ${masters.length} 位`}>
           {loading ? (
             <Loader label="正在加载…" />
           ) : error ? (
@@ -114,7 +115,7 @@ export default function Masters() {
               description="添加至少一位主人以接收升级通知"
             />
           ) : (
-            <ul className="divide-y divide-border">
+            <ul aria-label="主人列表" className="divide-y divide-border">
               {masters.map((m) => (
                 <MasterRow
                   key={m.userId}
@@ -125,6 +126,12 @@ export default function Masters() {
               ))}
             </ul>
           )}
+        </SectionCard>
+        <SectionCard
+          title="添加主人"
+          description="核对身份后，通过 QQ 私信验证码完成绑定"
+        >
+          <AddMasterWizard existing={masters} onBound={onBound} />
         </SectionCard>
       </div>
     </Page>

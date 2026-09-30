@@ -21,13 +21,13 @@ export function MasterRow({
 }) {
   const notify = master.kind === 'notify'
   return (
-    <li className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+    <li className="grid grid-cols-[2.5rem_minmax(0,1fr)_2rem] items-center gap-x-3 gap-y-2 py-3 first:pt-0 last:pb-0 sm:grid-cols-[2.5rem_minmax(0,1fr)_9rem_2rem]">
       <Avatar size="md" className="shrink-0">
         <Avatar.Image src={userAvatar(master.userId)} alt={master.nickname} loading="lazy" />
         <Avatar.Fallback>{(master.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <p className="truncate text-sm font-medium text-foreground">
             {master.nickname || `用户 ${master.userId}`}
           </p>
@@ -45,7 +45,7 @@ export function MasterRow({
         onChange={(v) => {
           if (v != null) onLevel(Number(v) as MinLevel)
         }}
-        className="w-36"
+        className="col-start-2 w-36 sm:col-start-auto"
       >
         <Select.Trigger>
           <Select.Value />
@@ -62,7 +62,7 @@ export function MasterRow({
         </Select.Popover>
       </Select>
       <Tooltip>
-        <Button size="sm" variant="danger-soft" isIconOnly aria-label="移除主人" onPress={onRemove}>
+        <Button size="sm" variant="danger-soft" isIconOnly aria-label="移除主人" onPress={onRemove} className="col-start-3 row-start-1 sm:col-start-auto sm:row-start-auto">
           <AppIcon name="remove" className="size-4" />
         </Button>
         <Tooltip.Content>移除主人</Tooltip.Content>
