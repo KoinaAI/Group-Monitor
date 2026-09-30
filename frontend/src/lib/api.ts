@@ -198,9 +198,13 @@ export const api = {
     save: (documents: DocumentConfig) => post<DocumentConfig>('/documents', documents),
   },
 
-  notices: (options: { groupId?: number; q?: string; limit?: number; before?: number; beforeId?: string } = {}) => {
+  notices: (options: { groupId?: number; groupIds?: number[]; q?: string; limit?: number; before?: number; beforeId?: string } = {}) => {
     const params = new URLSearchParams()
-    if (options.groupId) params.set('groupId', String(options.groupId))
+    if (options.groupIds?.length) {
+      options.groupIds.forEach((id) => params.append('groupId', String(id)))
+    } else if (options.groupId) {
+      params.set('groupId', String(options.groupId))
+    }
     if (options.q) params.set('q', options.q)
     if (options.limit) params.set('limit', String(options.limit))
     if (options.before) params.set('before', String(options.before))

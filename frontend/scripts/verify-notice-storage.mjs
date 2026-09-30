@@ -13,6 +13,7 @@ const config = { backup, documents, llm: { enabled: true, baseUrl: '', apiKey: '
 const notices = Array.from({ length: 30 }, (_, i) => ({ id: String(i), createdAt: Date.now() - i * 1000, groupId: 42, group: '项目群', messageIds: [i + 1], sources: [{ userId: 2, nickname: '老师', time: 100 }], result: { useful: true, level: 2, title: `通知 ${i}`, summary: '周五前提交确认', time: '周五', place: '会议室', event: '提交确认', deadline: '17:00' }, urgent: false }))
 notices.forEach((n) => Object.assign(n, { sourceId: 'qq', accountId: 'school' }))
 const sources = [{ id: 'qq', name: 'QQ', kind: 'napcat', accounts: [{ id: 'school', name: '校园账号' }, { id: 'work', name: '工作账号' }] }]
+const groups = [{ groupId: 42, groupName: '项目群', groupRemark: '产品协作', memberCount: 35, watch: true }, { groupId: 43, groupName: '公告群', groupRemark: '', memberCount: 200, watch: false }]
 let failSave = true
 let failRun = true
 let backupRuns = 0
@@ -27,6 +28,7 @@ await page.route('**/api/**', async (route) => {
   let body = {}
   if (path === '/api/auth/status') body = { authed: true }
   else if (path === '/api/sources') body = sources
+  else if (path === '/api/groups') body = groups
   else if (path === '/api/config') body = config
   else if (path === '/api/status') body = { account: { nickname: '测试账号' } }
   else if (path === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' })
@@ -89,11 +91,14 @@ try {
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].some((button) => button.textContent.includes('加载更早的通知')))
   assert.equal(noticeRequests.at(-1).searchParams.get('before'), String(notices.at(-1).createdAt))
   await page.getByLabel('关键词', { exact: true }).fill('提交')
-  await page.getByLabel('群号', { exact: true }).fill('42')
+  await page.getByLabel('筛选群组', { exact: true }).fill('项目')
+  await page.getByRole('option', { name: /项目群/ }).click()
+  await page.getByLabel('筛选群组', { exact: true }).fill('公告')
+  await page.getByRole('option', { name: /公告群/ }).click()
   await page.getByRole('button', { name: '搜索', exact: true }).click()
   await page.getByText('搜索命中的通知', { exact: true }).first().waitFor()
   assert.equal(noticeRequests.at(-1).searchParams.get('q'), '提交')
-  assert.equal(noticeRequests.at(-1).searchParams.get('groupId'), '42')
+  assert.deepEqual(noticeRequests.at(-1).searchParams.getAll('groupId'), ['42', '43'])
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
   await page.getByText('QQ / 校园账号 · 项目群', { exact: false }).first().waitFor()

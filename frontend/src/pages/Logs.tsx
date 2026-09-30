@@ -59,8 +59,8 @@ export default function Logs() {
             <ScrollShadow className="max-h-[calc(100dvh-18rem)] min-h-48 overflow-y-auto px-4">
               <ul className="divide-y divide-border/60">
                 {rows.map((entry, index) => (
-                  <li key={`${entry.ts}-${index}`} className="grid gap-x-3 gap-y-1 py-2.5 sm:grid-cols-[8.5rem_3.5rem_minmax(0,1fr)]">
-                    <span className="text-xs leading-5 tabular-nums text-muted">{fmtDateTime(entry.ts)}</span>
+                  <li key={`${entry.ts}-${index}`} className="grid gap-x-2 gap-y-1 py-2.5 sm:grid-cols-[max-content_auto_minmax(0,1fr)]">
+                    <span className="whitespace-nowrap text-xs leading-5 tabular-nums text-muted">{fmtDateTime(entry.ts)}</span>
                     <div className="row-start-1 justify-self-end sm:col-start-2 sm:justify-self-start">
                       <IntentChip intent={logLevelIntent[entry.level]}>{logLevelLabel[entry.level]}</IntentChip>
                     </div>

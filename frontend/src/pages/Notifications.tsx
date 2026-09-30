@@ -81,6 +81,7 @@ export default function Notifications() {
       {targets.map((target) => {
         const isCollapsed = collapsed[target.id] ?? false
         return <SectionCard key={target.id} title={target.name || (target.kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送')} description={target.kind === 'ntfy' ? 'ntfy · 主题广播' : 'Bark · 设备推送'} actions={<>
+          <Button size="sm" variant="secondary" isDisabled={busy || !target.enabled || dirty} onPress={() => test(target.id)}>发送测试通知</Button>
           <Button size="sm" variant="tertiary" aria-expanded={!isCollapsed} onPress={() => setCollapsed((current) => ({ ...current, [target.id]: !isCollapsed }))}>
             {isCollapsed ? '展开' : '收起'}
           </Button>
@@ -119,10 +120,6 @@ export default function Notifications() {
               </label>) : <span className="text-xs text-muted">所有账号</span>}
             </div>
           </fieldset>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs text-muted">{dirty ? '保存更改后可发送测试' : '测试将发送到当前目标'}</span>
-            <Button size="sm" variant="secondary" isDisabled={busy || !target.enabled || dirty} onPress={() => test(target.id)}>发送测试通知</Button>
-          </div>
         </fieldset>}
       </SectionCard>
       })}

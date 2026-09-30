@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button } from '@heroui/react'
+import { Button, Input, ListBox, TextField } from '@heroui/react'
 import { ListView, Widget } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
@@ -10,13 +10,16 @@ import { Loader } from '../components/Loader'
 import { api, ApiError } from '../lib/api'
 import { urgencyIntent, urgencyLabel } from '../lib/labels'
 import { fmtDateTime } from '../lib/time'
-import type { NoticeRecord, SourceConfig } from '../lib/types'
+import type { GroupRow, NoticeRecord, SourceConfig } from '../lib/types'
 
 const PAGE_SIZE = 30
 
 export default function Notices() {
   const [query, setQuery] = useState('')
-  const [group, setGroup] = useState('')
+  const [groupQuery, setGroupQuery] = useState('')
+  const [groupIds, setGroupIds] = useState<Set<string>>(new Set())
+  const [groups, setGroups] = useState<GroupRow[]>([])
+  const [groupSearchOpen, setGroupSearchOpen] = useState(false)
   const [rows, setRows] = useState<NoticeRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(false)
@@ -24,15 +27,16 @@ export default function Notices() {
   const [sources, setSources] = useState<SourceConfig[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const requestId = useRef(0)
-  const applied = useRef({ q: '', groupId: 0 })
+  const applied = useRef<{ q: string; groupIds: number[] }>({ q: '', groupIds: [] })
+  const selectedGroups = groups.filter((row) => groupIds.has(String(row.groupId)))
+  const groupSuggestions = groups.filter((row) => {
+    const needle = groupQuery.trim().toLowerCase()
+    return !needle || [row.groupName, row.groupRemark, String(row.groupId)].some((value) => value?.toLowerCase().includes(needle))
+  })
 
   const load = async (append = false) => {
-    if (!append && group.trim() && (!/^\d+$/.test(group.trim()) || !Number.isSafeInteger(Number(group)) || Number(group) <= 0)) {
-      setError('请输入有效群号')
-      return
-    }
     const id = ++requestId.current
-    const filters = append ? applied.current : { q: query.trim(), groupId: Number(group) || 0 }
+    const filters = append ? applied.current : { q: query.trim(), groupIds: [...groupIds].map(Number).filter((value) => Number.isSafeInteger(value) && value > 0) }
     setLoading(true)
     setError('')
     try {
@@ -55,6 +59,7 @@ export default function Notices() {
   useEffect(() => {
     let canceled = false
     api.sources.list().then((value) => { if (!canceled) setSources(value) }).catch(() => {})
+    api.groups.list().then((value) => { if (!canceled) setGroups(value) }).catch(() => {})
     const id = ++requestId.current
     api.notices({ limit: PAGE_SIZE }).then((result) => {
       if (canceled || id !== requestId.current) return
@@ -79,11 +84,62 @@ export default function Notices() {
           <Widget.Description className="tabular-nums">已加载 {rows.length} 条</Widget.Description>
         </Widget.Header>
         <Widget.Content>
-          <form onSubmit={(event) => { event.preventDefault(); void load() }} className="grid grid-cols-[1fr_auto] items-end gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto]">
-            <TextSetting label="关键词" value={query} onChange={setQuery} placeholder="搜索标题、摘要或事项" className="col-span-2 sm:col-span-1" />
-            <TextSetting label="群号" value={group} onChange={setGroup} inputMode="numeric" placeholder="全部群组" />
+          <form onSubmit={(event) => { event.preventDefault(); void load() }} className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)_auto]">
+            <TextSetting label="关键词" value={query} onChange={setQuery} placeholder="搜索标题、摘要或事项" />
+            <div className="relative min-w-0">
+              <TextField
+                aria-label="筛选群组"
+                value={groupQuery}
+                onChange={(value) => { setGroupQuery(value); setGroupSearchOpen(true) }}
+                onFocus={() => setGroupSearchOpen(true)}
+                onBlur={() => window.setTimeout(() => setGroupSearchOpen(false), 120)}
+              >
+                <Input placeholder="按群名筛选，可多选" variant="secondary" />
+              </TextField>
+              {groupSearchOpen ? <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+                <ListBox aria-label="群组筛选结果" className="max-h-64 overflow-y-auto py-1">
+                  {groupSuggestions.length === 0 ? <ListBox.Item id="empty" isDisabled textValue="没有匹配的群组">没有匹配的群组</ListBox.Item> : groupSuggestions.map((row) => {
+                    const selected = groupIds.has(String(row.groupId))
+                    return <ListBox.Item
+                      key={row.groupId}
+                      id={String(row.groupId)}
+                      textValue={`${row.groupName} ${row.groupRemark} ${row.groupId}`}
+                      aria-selected={selected}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onAction={() => {
+                        setGroupIds((current) => {
+                          const next = new Set(current)
+                          if (selected) next.delete(String(row.groupId))
+                          else next.add(String(row.groupId))
+                          return next
+                        })
+                        setGroupQuery('')
+                      }}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate">{row.groupName || `群 ${row.groupId}`}</span>
+                        <span className="block text-xs text-muted tabular-nums">群号 {row.groupId}{row.groupRemark ? ` · ${row.groupRemark}` : ''}</span>
+                      </span>
+                      {selected ? <span className="text-accent" aria-hidden>✓</span> : null}
+                    </ListBox.Item>
+                  })}
+                </ListBox>
+              </div> : null}
+            </div>
             <Button type="submit" isPending={loading}>搜索</Button>
           </form>
+          {selectedGroups.length ? <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="已选群组">
+            <span className="mr-1 text-xs text-muted">已选群组</span>
+            {selectedGroups.map((row) => <span key={row.groupId} className="inline-flex max-w-full items-center gap-1 rounded-md bg-surface-secondary px-2 py-1 text-xs">
+              <span className="truncate">{row.groupName || `群 ${row.groupId}`} · {row.groupId}</span>
+              <Button size="sm" variant="ghost" isIconOnly className="size-5 min-w-5 p-0 text-muted" aria-label={`移除 ${row.groupName || row.groupId}`} onPress={() => setGroupIds((current) => {
+                const next = new Set(current)
+                next.delete(String(row.groupId))
+                return next
+              })}><span aria-hidden>×</span></Button>
+            </span>)}
+            <Button size="sm" variant="ghost" onPress={() => setGroupIds(new Set())}>清除选择</Button>
+          </div> : null}
         </Widget.Content>
       </Widget>
       {error ? <InlineError message={error} onRetry={() => { void load() }} /> : null}
