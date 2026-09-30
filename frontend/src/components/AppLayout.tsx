@@ -8,7 +8,10 @@ import { Link } from 'react-router-dom'
 import { Loader } from './Loader'
 import { ThemeToggle } from './ThemeToggle'
 import { AppIcon } from '../lib/icons'
-import { NAV, NAV_TITLE } from '../config/nav'
+import { SIDEBAR_NAV, NAV_TITLE, navSection } from '../config/nav'
+import { NavLink } from 'react-router-dom'
+import { QuickNavigation } from './QuickNavigation'
+import { EmptyState } from './ui/States'
 import { api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import { connectLiveStream, useLive } from '../lib/store'
@@ -30,7 +33,7 @@ function Brand() {
         data-sidebar="label"
       >
         <p className="truncate text-sm font-semibold text-foreground">讯枢</p>
-        <p className="truncate text-xs text-muted">消息通知与归档</p>
+        <p className="truncate text-[11px] text-muted">消息工作空间</p>
       </div>
     </div>
   )
@@ -101,7 +104,7 @@ function SidebarInner() {
         <Brand />
       </Sidebar.Header>
       <Sidebar.Content>
-        {NAV.map((section) => (
+        {SIDEBAR_NAV.map((section) => (
           <Sidebar.Group key={section.title}>
             <Sidebar.GroupLabel>{section.title}</Sidebar.GroupLabel>
             <Sidebar.Menu aria-label={section.title}>
@@ -111,7 +114,7 @@ function SidebarInner() {
                   id={item.to}
                   href={item.to}
                   textValue={item.label}
-                  isCurrent={pathname === item.to}
+                  isCurrent={pathname === item.to || (section.title === '配置中心' && navSection(pathname)?.items[0].to === item.to) || (item.to === '/groups' && pathname.startsWith('/groups/'))}
                 >
                   <Sidebar.MenuIcon>
                     <AppIcon name={item.icon} className="size-4" />
@@ -124,6 +127,7 @@ function SidebarInner() {
         ))}
       </Sidebar.Content>
       <Sidebar.Footer>
+        <div className="flex justify-center py-2"><ThemeToggle /></div>
         <AccountFooter />
       </Sidebar.Footer>
     </>
@@ -133,18 +137,21 @@ function SidebarInner() {
 // Top bar: mobile menu toggle + desktop collapse trigger + page title.
 function TopNav() {
   const { pathname } = useLocation()
-  const title = NAV_TITLE[pathname] ?? '讯枢'
+  const section = navSection(pathname)
+  const title = pathname.includes('/history') ? '聊天记录' : NAV_TITLE[pathname] ?? '连接'
+  const streaming = useLive((s) => s.connected)
   return (
     <Navbar maxWidth="full">
       <Navbar.Header>
-        <ProLayout.MenuToggle />
-        <Sidebar.Trigger />
+        <ProLayout.MenuToggle aria-label="打开导航" tooltip="打开导航" />
+        <Sidebar.Trigger aria-label="收起或展开侧栏" />
         <span className="ml-1 hidden whitespace-nowrap text-sm font-semibold text-foreground sm:inline">
-          {title}
+          {section?.title ?? '工作台'} <span className="mx-2 font-normal text-muted">/</span> {title}
         </span>
         <Navbar.Spacer />
+        <span className="hidden items-center gap-1.5 text-xs text-muted xl:flex"><span className={`size-1.5 rounded-full ${streaming ? 'bg-success' : 'bg-warning'}`} />{streaming ? '实时同步' : '正在重连'}</span>
+        <QuickNavigation />
         <AccountSelector />
-        <ThemeToggle />
       </Navbar.Header>
     </Navbar>
   )
@@ -152,6 +159,8 @@ function TopNav() {
 
 export function AppLayout() {
   const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const section = navSection(pathname)
   const needsAccount = /^(\/groups|\/masters|\/connection)/.test(pathname) && !activeAccount()
   useEffect(() => {
     const stop = connectLiveStream()
@@ -163,7 +172,13 @@ export function AppLayout() {
 
   return (
     <ProLayout
+      className="workspace-shell"
+      scrollMode="content"
+      navigate={navigate}
       navbar={<TopNav />}
+      toolbar={section && section.title !== '工作台' ? <nav aria-label="配置页面" className="flex gap-1 overflow-x-auto border-b border-separator bg-background px-4 py-2 sm:px-6">
+        {section.items.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => `whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${isActive ? 'bg-surface font-medium text-foreground shadow-sm' : 'text-muted hover:bg-surface-secondary'}`}>{item.label}</NavLink>)}
+      </nav> : undefined}
       sidebar={
         <>
           <Sidebar className="group">
@@ -176,7 +191,7 @@ export function AppLayout() {
       }
     >
       <Suspense fallback={<Loader label="正在加载…" />}>
-        {needsAccount ? <div className="p-8"><h2 className="text-lg font-semibold">选择一个信息源账号</h2><p className="mt-2 text-sm text-muted">使用顶部菜单选择账号，分别管理它的群、主人和规则。</p><Link className="mt-4 inline-block text-accent" to="/sources">添加或管理信息源</Link></div> : <Outlet />}
+        {needsAccount ? <div className="p-6"><EmptyState icon="connection" title="选择一个信息源账号" description="使用顶部菜单选择账号，管理它的群组、主人和连接。" action={<Link className="text-sm text-accent" to="/sources">添加或管理信息源</Link>} /></div> : <Outlet />}
       </Suspense>
     </ProLayout>
   )
