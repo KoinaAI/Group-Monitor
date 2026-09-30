@@ -11,7 +11,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:skills": "python3 scripts/test-skill-install.py"
+    "test:skills": "python3 scripts/test-skill-install.py",
+    "test:ui": "node scripts/verify-workspace.mjs && node scripts/verify-monitoring.mjs && node scripts/verify-setup-sources.mjs && node scripts/verify-push-channels.mjs && node scripts/verify-agent-access.mjs && node scripts/verify-notice-storage.mjs"
   },
   "dependencies": {
     "@heroui-pro/react": "^1.0.0-beta.10",

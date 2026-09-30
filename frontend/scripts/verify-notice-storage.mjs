@@ -53,7 +53,7 @@ await page.route('**/api/**', async (route) => {
 })
 
 try {
-  const base = process.env.SHOT_BASE ?? 'http://127.0.0.1:5178'
+  const base = process.env.SHOT_BASE ?? 'http://127.0.0.1:15178'
   await page.goto(`${base}/storage`)
   await page.getByRole('heading', { name: '存储与备份', exact: true }).waitFor()
   await page.getByLabel('Cloudflare Account ID').fill('a'.repeat(32))
@@ -84,19 +84,19 @@ try {
   assert.equal(await page.getByLabel('MinerU API Key', { exact: true }).inputValue(), '')
 
   await page.goto(`${base}/notices`)
-  await page.getByText('通知 0', { exact: true }).waitFor()
+  await page.getByText('通知 0', { exact: true }).first().waitFor()
   await page.getByRole('button', { name: '加载更早的通知' }).click()
   await page.waitForFunction(() => ![...document.querySelectorAll('button')].some((button) => button.textContent.includes('加载更早的通知')))
   assert.equal(noticeRequests.at(-1).searchParams.get('before'), String(notices.at(-1).createdAt))
   await page.getByLabel('关键词', { exact: true }).fill('提交')
   await page.getByLabel('群号', { exact: true }).fill('42')
   await page.getByRole('button', { name: '搜索', exact: true }).click()
-  await page.getByText('搜索命中的通知', { exact: true }).waitFor()
+  await page.getByText('搜索命中的通知', { exact: true }).first().waitFor()
   assert.equal(noticeRequests.at(-1).searchParams.get('q'), '提交')
   assert.equal(noticeRequests.at(-1).searchParams.get('groupId'), '42')
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
-  await page.getByText('QQ / 校园账号 · 项目群', { exact: false }).waitFor()
+  await page.getByText('QQ / 校园账号 · 项目群', { exact: false }).first().waitFor()
   // Start with another tab's saved choice. A copied archive link must select
   // its own account before any history request runs.
   await page.evaluate(() => localStorage.setItem('xunshu-account', 'work'))
@@ -110,7 +110,7 @@ try {
   await page.evaluate(() => localStorage.setItem('xunshu-account', 'work'))
   await page.setViewportSize({ width: 1280, height: 1000 })
   await page.locator('[data-slot="sidebar-menu-item-content"]').filter({ hasText: '通知归档' }).click()
-  await page.getByText('通知 0', { exact: true }).waitFor()
+  await page.getByText('通知 0', { exact: true }).first().waitFor()
   assert.equal(noticeRequests.at(-1).searchParams.get('accountId'), 'school')
   assert.deepEqual(errors, [])
   console.log('PASS: R2 preset, backup errors, credential redaction, document settings, notice search/pagination, source labels, account-scoped history links, tab isolation, mobile width')

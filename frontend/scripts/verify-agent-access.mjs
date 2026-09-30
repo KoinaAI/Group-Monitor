@@ -48,7 +48,8 @@ try{
   assert(!(await response.text()).startsWith('<!doctype html>'),path)
  }
  await page.getByLabel('密钥名称',{exact:true}).fill('个人助理')
- await page.getByRole('checkbox',{name:'QQ / 校园'}).check()
+ await page.getByRole('main').getByText('QQ / 校园',{exact:true}).click()
+ assert(await page.getByRole('checkbox',{name:'QQ / 校园'}).isChecked())
  await page.getByRole('button',{name:'创建密钥',exact:true}).click()
  await page.getByText('xs_fixture_show_once',{exact:true}).waitFor()
  assert.deepEqual(created,{name:'个人助理',accountIds:['school']})
