@@ -167,6 +167,45 @@ func TestDocumentReaderMinerUUploadPollingAndMarkdown(t *testing.T) {
 	}
 }
 
+func TestDocumentReaderAgentForwardsAnyFilenameToMinerU(t *testing.T) {
+	var names []string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/agent/parse/file":
+			var body struct {
+				Name string `json:"file_name"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			names = append(names, body.Name)
+			fmt.Fprintf(w, `{"code":0,"data":{"task_id":%q,"file_url":%q}}`, body.Name, srv.URL+"/upload")
+		case "/upload":
+			w.WriteHeader(http.StatusOK)
+		case "/api/v1/agent/parse/notice.txt", "/api/v1/agent/parse/notice.md", "/api/v1/agent/parse/notice.xyz":
+			fmt.Fprintf(w, `{"code":0,"data":{"state":"done","markdown_url":%q}}`, srv.URL+"/result.md")
+		case "/result.md":
+			fmt.Fprint(w, "正文")
+		default:
+			t.Errorf("unexpected MinerU path %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	cfg := defaultDocumentConfig()
+	cfg.Enabled, cfg.BaseURL = true, srv.URL+"/api/v1/agent"
+	d := NewDocumentReader(nil)
+	for _, name := range []string{"notice.txt", "notice.md", "notice.xyz"} {
+		if text, err := d.extractMinerU(context.Background(), cfg, name, []byte("bytes")); err != nil || text != "正文" {
+			t.Fatalf("%s extraction text=%q err=%v", name, text, err)
+		}
+	}
+	if strings.Join(names, ",") != "notice.txt,notice.md,notice.xyz" {
+		t.Fatalf("MinerU did not receive all filenames: %v", names)
+	}
+}
+
 func TestDocumentReaderRejectsUnsafeURLsAndMissingKeys(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1); io.WriteString(w, "private") }))
