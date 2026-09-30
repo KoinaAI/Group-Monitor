@@ -22,7 +22,7 @@ export default function Connection() {
   return (
     <Page>
       <PageHeader title="连接" description="NapCat OneBot 连接配置" />
-      <div className="flex flex-col gap-4">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(15rem,0.6fr)_minmax(0,1.8fr)]">
         <SectionCard title="连接状态" description="与 NapCat 的实时连接情况">
           <div className="flex items-center gap-3">
             <StatusDot tone={connected ? 'success' : 'danger'} pulse={connected} />

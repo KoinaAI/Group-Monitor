@@ -51,7 +51,7 @@ export default function Sources() {
           <TextSetting className="w-full sm:max-w-sm" label="信息源名称" value={source.name} onChange={(name) => patch(source.id, { name })} />
           <Button variant="secondary" onPress={() => patch(source.id, { accounts: [...source.accounts, newAccount()] })}><AppIcon name="add" className="size-4" />添加账号</Button>
         </div>
-        <div className="grid items-start gap-4 xl:grid-cols-2">
+        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,32rem),1fr))]">
           {source.accounts.map((account) => {
             const connected = statuses.some((s) => s.accountId === account.id && s.connected)
             return <Card key={account.id} variant="secondary" className="min-w-0 gap-4">
