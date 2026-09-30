@@ -46,12 +46,12 @@ export default function Sources() {
       {sources.length === 0 && <Card><EmptyState size="sm">
         <EmptyState.Header><EmptyState.Media variant="icon"><AppIcon name="connection" className="size-6" /></EmptyState.Media><EmptyState.Title>尚未添加信息源</EmptyState.Title><EmptyState.Description>接入 NapCat，为每个 QQ 账号配置独立的 OneBot 接口。</EmptyState.Description></EmptyState.Header>
       </EmptyState></Card>}
-      {sources.map((source) => <SectionCard key={source.id} title={<span className="flex items-center gap-2"><AppIcon name="connection" className="size-4 text-muted" />{source.name || 'NapCat'}<Chip size="sm" variant="soft">{source.accounts.length} 个账号</Chip></span>} description="NapCat / OneBot v11" actions={<Button size="sm" variant="danger-soft" onPress={() => setSources(sources.filter((s) => s.id !== source.id))}>移除信息源</Button>}>
+      {sources.map((source) => <SectionCard key={source.id} className={source.accounts.length === 1 ? 'lg:mx-auto lg:w-full lg:max-w-5xl' : undefined} title={<span className="flex items-center gap-2"><AppIcon name="connection" className="size-4 text-muted" />{source.name || 'NapCat'}<Chip size="sm" variant="soft">{source.accounts.length} 个账号</Chip></span>} description="NapCat / OneBot v11" actions={<Button size="sm" variant="danger-soft" onPress={() => setSources(sources.filter((s) => s.id !== source.id))}>移除信息源</Button>}>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <TextSetting className="w-full sm:max-w-sm" label="信息源名称" value={source.name} onChange={(name) => patch(source.id, { name })} />
           <Button variant="secondary" onPress={() => patch(source.id, { accounts: [...source.accounts, newAccount()] })}><AppIcon name="add" className="size-4" />添加账号</Button>
         </div>
-        <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,32rem),1fr))]">
+        <div className={`grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,32rem),1fr))] ${source.accounts.length === 1 ? 'lg:max-w-4xl' : ''}`}>
           {source.accounts.map((account) => {
             const connected = statuses.some((s) => s.accountId === account.id && s.connected)
             return <Card key={account.id} variant="secondary" className="min-w-0 gap-4 shadow-none">
