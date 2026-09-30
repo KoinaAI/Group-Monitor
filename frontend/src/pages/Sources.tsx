@@ -54,7 +54,7 @@ export default function Sources() {
         <div className="grid items-start gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,32rem),1fr))]">
           {source.accounts.map((account) => {
             const connected = statuses.some((s) => s.accountId === account.id && s.connected)
-            return <Card key={account.id} variant="secondary" className="min-w-0 gap-4">
+            return <Card key={account.id} variant="secondary" className="min-w-0 gap-4 shadow-none">
               <Card.Header className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <Chip size="sm" variant="soft" color={connected ? 'success' : account.enabled ? 'warning' : 'default'}>{connected ? '已连接' : account.enabled ? '等待连接' : '已停用'}</Chip>
                 <div className="flex gap-1">

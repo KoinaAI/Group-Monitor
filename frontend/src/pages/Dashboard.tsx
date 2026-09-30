@@ -83,7 +83,7 @@ export default function Dashboard() {
         <Stat label="静默窗口" value={`${quiet}s`} icon="clock" tone="default" />
       </KPIGroup>
 
-      <Widget className="my-4">
+      <Widget>
         <Widget.Content className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 !py-3">
           <div className="flex min-w-0 items-center gap-3">
             <AppIcon name="rules" className="size-4 shrink-0 text-muted" />
