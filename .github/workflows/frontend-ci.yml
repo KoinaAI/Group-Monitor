@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -33,3 +37,25 @@ jobs:
         run: npm run test:skills
       - name: Build
         run: npm run build
+      - name: Install browser for UI regression tests
+        run: npx playwright install --with-deps chromium
+      - name: Verify workspace and configuration flows
+        env:
+          SHOT_BASE: http://127.0.0.1:15178
+          SHOT_OUT: /tmp/xunshu-workspace
+        run: |
+          npm run dev -- --host 127.0.0.1 --port 15178 > /tmp/xunshu-vite.log 2>&1 &
+          vite_pid=$!
+          trap 'kill "$vite_pid"' EXIT
+          for attempt in $(seq 1 40); do
+            if curl -fsS "$SHOT_BASE" > /dev/null; then break; fi
+            sleep 1
+          done
+          npm run test:ui
+      - name: Upload UI screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-screenshots
+          path: /tmp/xunshu-workspace
+          if-no-files-found: ignore

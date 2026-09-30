@@ -1,0 +1,46 @@
+name: Docker CI
+
+on:
+  push:
+    paths:
+      - frontend/**
+      - backend/**
+      - docker/**
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker-ci.yml
+  pull_request:
+    paths:
+      - frontend/**
+      - backend/**
+      - docker/**
+      - Dockerfile
+      - .dockerignore
+      - .github/workflows/docker-ci.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docker-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build container without publishing
+    # Pro distribution needs the repository secret, unavailable to fork PRs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          secrets: |
+            heroui_key=${{ secrets.HEROUI_KEY }}
