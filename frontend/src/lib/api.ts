@@ -1,5 +1,6 @@
 import { scopedURL } from './accounts'
 import type {
+  NotificationTarget,
   SourceConfig,
   SourceStatus,
   AuthStatus,
@@ -88,6 +89,11 @@ const post = <T>(path: string, data?: unknown) =>
 // the backend — there is no per-section GET, so pages load their initial values
 // from `api.config()` (the full Config) and save through these section calls.
 export const api = {
+  notifications: {
+    list: () => get<NotificationTarget[]>('/notifications'),
+    save: (targets: NotificationTarget[]) => post<NotificationTarget[]>('/notifications', { targets }),
+    test: (id: string) => post<{ ok: boolean }>('/notifications/test', { id }),
+  },
   setup: {
     status: () => get<{ required: boolean; tokenRequired: boolean }>('/setup/status'),
     complete: (body: { setupToken: string; password: string; llm?: LLMConfig; sources?: SourceConfig[] }) => post<{ ok: boolean }>('/setup', body),

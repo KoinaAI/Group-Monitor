@@ -341,3 +341,9 @@ export interface SourceConfig {
   accounts: SourceAccount[]
 }
 export interface SourceStatus { sourceId: string; accountId: string; connected: boolean; selfId: number }
+
+export interface NotificationTarget {
+  id: string; name: string; kind: 'ntfy' | 'bark'; enabled: boolean; url: string
+  topic?: string; token?: string; deviceKey?: string; group?: string
+  minLevel: number; accountIds?: string[]
+}

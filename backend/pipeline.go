@@ -766,27 +766,33 @@ func (p *Pipeline) escalateGeneration(groupID int64, groupName string, res LLMRe
 		}
 	}
 	sent, failed := sendPrivateConcurrentContext(p.ctx, p.ob, targets, text)
+	pushSent, pushFailed := broadcastPushContext(p.ctx, cfg, res.Title, text, res.Level)
 	if !p.active(generation, groupID) {
 		return
 	}
 	for _, uid := range failed {
 		p.hub.Log("error", groupID, groupName, fmt.Sprintf("推送给主人 %d 失败", uid))
 	}
-	p.hub.Log("escalate", groupID, groupName, fmt.Sprintf("[%s] %s → 已通知 %d 位主人，失败 %d 位", levelLabel(res.Level), res.Title, sent, len(failed)))
+	for _, id := range pushFailed {
+		p.hub.Log("error", groupID, groupName, "广播通知失败："+id)
+	}
+	p.hub.Log("escalate", groupID, groupName, fmt.Sprintf("[%s] %s → 已通知 %d 个目标，失败 %d 个", levelLabel(res.Level), res.Title, sent+pushSent, len(failed)+len(pushFailed)))
 	p.hub.Escalation(map[string]any{
-		"groupId":  groupID,
-		"group":    groupName,
-		"level":    res.Level,
-		"title":    res.Title,
-		"summary":  res.Summary,
-		"time":     res.Time,
-		"place":    res.Place,
-		"event":    res.Event,
-		"deadline": res.Deadline,
-		"notified": sent,
-		"failed":   failed,
-		"urgent":   urgent,
-		"ts":       time.Now().UnixMilli(),
+		"pushNotified": pushSent,
+		"pushFailed":   pushFailed,
+		"groupId":      groupID,
+		"group":        groupName,
+		"level":        res.Level,
+		"title":        res.Title,
+		"summary":      res.Summary,
+		"time":         res.Time,
+		"place":        res.Place,
+		"event":        res.Event,
+		"deadline":     res.Deadline,
+		"notified":     sent + pushSent,
+		"failed":       failed,
+		"urgent":       urgent,
+		"ts":           time.Now().UnixMilli(),
 	})
 }
 

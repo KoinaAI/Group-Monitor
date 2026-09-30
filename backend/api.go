@@ -61,6 +61,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) er
 func redactedConfig(c Config) Config {
 	c = cloneConfig(c)
 	c.Security.PasswordHash = ""
+	c.NotificationTargets = redactedNotificationTargets(c.NotificationTargets)
 	c.Sources = redactedSources(c.Sources)
 	c.OneBot.Token = ""
 	c.LLM.APIKey = ""
@@ -109,6 +110,8 @@ func (a *API) Routes() *http.ServeMux {
 
 	// Protected endpoints: require a valid session cookie.
 	protected := map[string]http.HandlerFunc{
+		"/api/notifications":          a.handleNotifications,
+		"/api/notifications/test":     a.handleNotificationTest,
 		"/api/sources":                a.handleSources,
 		"/api/sources/status":         a.handleSourceStatus,
 		"/api/status":                 a.handleStatus,

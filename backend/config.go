@@ -13,10 +13,11 @@ import (
 // Config is the full persisted state of the notifier. It is written to disk as
 // JSON whenever the frontend saves changes, and loaded once on startup.
 type Config struct {
-	Security  SecurityConfig `json:"security"`
-	Sources   []SourceConfig `json:"sources"`
-	SourceID  string         `json:"-"`
-	AccountID string         `json:"-"`
+	NotificationTargets []NotificationTarget `json:"notificationTargets"`
+	Security            SecurityConfig       `json:"security"`
+	Sources             []SourceConfig       `json:"sources"`
+	SourceID            string               `json:"-"`
+	AccountID           string               `json:"-"`
 	// OneBot connection to the running NapCat instance.
 	OneBot OneBotConfig `json:"onebot"`
 	// LLM is the OpenAI-compatible endpoint used to format/filter messages.
@@ -292,6 +293,7 @@ func (s *Store) Update(fn func(*Config)) (Config, error) {
 }
 
 func cloneConfig(c Config) Config {
+	c.NotificationTargets = cloneNotificationTargets(c.NotificationTargets)
 	c.Sources = cloneSources(c.Sources)
 	c.Masters = slices.Clone(c.Masters)
 	c.Groups = slices.Clone(c.Groups)
@@ -355,6 +357,9 @@ func validText(s string, max int) bool {
 // Zero values that historically meant "use the default" are normalized by the
 // API handlers before Update; persisted values themselves must stay bounded.
 func validateConfig(c Config) error {
+	if err := validateNotificationTargets(c.NotificationTargets); err != nil {
+		return err
+	}
 	if err := validateSecurityConfig(c.Security); err != nil {
 		return err
 	}

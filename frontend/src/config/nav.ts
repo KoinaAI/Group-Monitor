@@ -31,6 +31,7 @@ export const NAV: NavSection[] = [
   {
     title: '配置',
     items: [
+      { label: '广播通知', to: '/notifications', icon: 'send', hint: 'ntfy 与 Bark 通知目标' },
       { label: '主人', to: '/masters', icon: 'masters', hint: '通知接收人与等级' },
       { label: '规则', to: '/rules', icon: 'rules', hint: '静默窗口与升级条件' },
       { label: '智能', to: '/intelligence', icon: 'intelligence', hint: 'LLM 提炼与意图闸门' },

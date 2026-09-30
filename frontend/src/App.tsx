@@ -16,6 +16,7 @@ import Setup from './pages/Setup'
 
 // Route-level code splitting: the authed pages load on demand behind the
 // AppLayout Suspense boundary, keeping the initial (login) bundle lean.
+const Notifications = lazy(() => import('./pages/Notifications'))
 const Sources = lazy(() => import('./pages/Sources'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Groups = lazy(() => import('./pages/Groups'))
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/intelligence" element={<Intelligence />} />
           <Route path="/connection" element={<Connection />} />
           <Route path="/sources" element={<Sources />} />
+          <Route path="/notifications" element={<Notifications />} />
           <Route path="/storage" element={<Storage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
