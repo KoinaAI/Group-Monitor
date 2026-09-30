@@ -3,9 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func twoAccountConfig() []SourceConfig {
@@ -121,5 +129,174 @@ func TestSourceRuntimeDeletionAndDisabledDefault(t *testing.T) {
 	}
 	if !a.Pipeline.stopped || !a.Assistant.stopped {
 		t.Fatal("deleted runtime not stopped")
+	}
+}
+
+func TestSourceSavePreservesConcurrentScopedSettings(t *testing.T) {
+	a := newTestAPI(t)
+	defer a.pipe.Shutdown()
+	if _, err := a.store.Update(func(c *Config) { c.Sources = twoAccountConfig() }); err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessionCookieFor(t, a)
+	draft := redactedSources(a.store.Get().Sources)
+	draft[0].Accounts[0].Name = "renamed"
+	body, _ := json.Marshal(map[string]any{"sources": draft})
+	start := make(chan struct{})
+	errors := make(chan error, 2)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 60; i++ {
+			if _, err := a.store.ForAccount("school").Update(func(c *Config) {
+				c.Groups[0].GroupName = fmt.Sprintf("group-%d", i)
+				c.Masters = []Master{{UserID: int64(i + 100)}}
+				c.OneBot.Token = fmt.Sprintf("token-%d", i)
+				c.Rules.QuietWindowSec = i + 100
+			}); err != nil {
+				errors <- err
+				return
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := 0; i < 60; i++ {
+			w := serveAPI(a, http.MethodPost, "/api/sources", body, cookie)
+			if w.Code != 200 {
+				errors <- fmt.Errorf("source save returned %d", w.Code)
+				return
+			}
+		}
+	}()
+	close(start)
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Fatal(err)
+	}
+	cfg := a.store.ForAccount("school").Get()
+	if cfg.Groups[0].GroupName != "group-59" || cfg.Masters[0].UserID != 159 || cfg.OneBot.Token != "token-59" || cfg.Rules.QuietWindowSec != 159 {
+		t.Fatal("source save discarded a completed scoped update")
+	}
+	if a.store.Get().Sources[0].Accounts[0].Name != "renamed" || a.store.ForAccount("work").Get().Groups[0].GroupName != "工作群" {
+		t.Fatal("source edits were not applied within the intended account")
+	}
+	// An identity cannot move channels, even when the submitted form is stale.
+	before := a.store.Get()
+	draft[0].ID = "another-source"
+	body, _ = json.Marshal(map[string]any{"sources": draft})
+	if w := serveAPI(a, http.MethodPost, "/api/sources", body, cookie); w.Code != 400 || !reflect.DeepEqual(before, a.store.Get()) {
+		t.Fatal("moving an account modified its existing configuration")
+	}
+}
+
+func TestAccountUnrelatedEditsPreserveInheritedRules(t *testing.T) {
+	a := newTestAPI(t)
+	defer a.pipe.Shutdown()
+	if _, err := a.store.Update(func(c *Config) {
+		c.Sources = twoAccountConfig()
+		c.Rules.UrgentKeywords = []string{"global"}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	school := a.store.ForAccount("school")
+	for _, edit := range []func(*Config){
+		func(c *Config) { c.Groups[0].Watch = false },
+		func(c *Config) { c.Masters = []Master{{UserID: 10}} },
+		func(c *Config) { c.OneBot.Token = "updated-token" },
+	} {
+		if _, err := school.Update(edit); err != nil {
+			t.Fatal(err)
+		}
+		if a.store.Get().Sources[0].Accounts[0].Rules != nil {
+			t.Fatal("unrelated edit pinned inherited rules")
+		}
+	}
+	if _, err := a.store.Update(func(c *Config) { c.Rules.QuietWindowSec = 137 }); err != nil {
+		t.Fatal(err)
+	}
+	if school.Get().Rules.QuietWindowSec != 137 {
+		t.Fatal("account stopped inheriting global rule changes")
+	}
+	// In-place slice edits must create an override without mutating the global
+	// rules or another inheriting account through a shared backing array.
+	if _, err := school.Update(func(c *Config) { c.Rules.UrgentKeywords[0] = "school" }); err != nil {
+		t.Fatal(err)
+	}
+	if a.store.Get().Rules.UrgentKeywords[0] != "global" || a.store.ForAccount("work").Get().Rules.UrgentKeywords[0] != "global" {
+		t.Fatal("account rule edit leaked into inherited global rules")
+	}
+	if _, err := a.store.Update(func(c *Config) { c.Rules.QuietWindowSec = 151 }); err != nil {
+		t.Fatal(err)
+	}
+	if school.Get().Rules.QuietWindowSec != 137 || a.store.ForAccount("work").Get().Rules.QuietWindowSec != 151 {
+		t.Fatal("explicit account override or other account inheritance changed")
+	}
+}
+
+func TestGlobalModelEditsDiscardInFlightAccountNotifications(t *testing.T) {
+	for _, path := range []string{"/api/llm", "/api/jev"} {
+		t.Run(path, func(t *testing.T) {
+			started, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var releaseOnce sync.Once
+			unblock := func() { releaseOnce.Do(func() { close(release) }) }
+			llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				close(started)
+				<-release
+				fmt.Fprint(w, `{"choices":[{"message":{"content":"{\"useful\":true,\"level\":2,\"title\":\"Notice\",\"summary\":\"Scheduled meeting\"}"}}]}`)
+			}))
+			defer llm.Close()
+			defer unblock()
+			var sent atomic.Int32
+			push := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { sent.Add(1); fmt.Fprint(w, `{}`) }))
+			defer push.Close()
+			onebot := httptest.NewServer(http.NotFoundHandler())
+			defer onebot.Close()
+			a := newTestAPI(t)
+			defer a.pipe.Shutdown()
+			if _, err := a.store.Update(func(c *Config) {
+				c.Enabled = true
+				c.Sources = twoAccountConfig()
+				account := &c.Sources[0].Accounts[0]
+				account.Enabled = true
+				account.Masters = nil
+				account.OneBot = OneBotConfig{HTTPBase: onebot.URL, WSURL: strings.Replace(onebot.URL, "http", "ws", 1)}
+				c.LLM.Enabled, c.LLM.BaseURL, c.LLM.APIKey = true, llm.URL, "fixture"
+				c.NotificationTargets = []NotificationTarget{{ID: "push", Name: "push", Kind: "ntfy", Enabled: true, URL: push.URL, Topic: "notice"}}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			a.sources = NewSourceManager(a)
+			a.sources.Reconcile()
+			defer a.sources.Shutdown()
+			runtime, _ := a.sources.Account("school")
+			cfg := runtime.Store.Get()
+			go func() {
+				defer close(done)
+				runtime.Pipeline.process(cfg, 42, "school", []scored{classify(&cfg, msg(42, 7, "member", "Meeting tomorrow"))}, false)
+			}()
+			select {
+			case <-started:
+			case <-time.After(3 * time.Second):
+				t.Fatal("account model request did not start")
+			}
+			w := serveAPI(a, http.MethodPost, path, []byte(`{"enabled":false}`), sessionCookieFor(t, a))
+			unblock()
+			if w.Code != 200 {
+				t.Fatalf("model config update returned %d", w.Code)
+			}
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("account model request did not finish")
+			}
+			if sent.Load() != 0 || len(runtime.Pipeline.hub.RecentEscalations()) != 0 {
+				t.Fatal("model edit allowed the old account task to publish a notification")
+			}
+		})
 	}
 }

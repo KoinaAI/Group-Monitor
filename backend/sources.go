@@ -134,36 +134,7 @@ func (a *API) handleSources(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, 400, "invalid sources")
 			return
 		}
-		// Existing identity owns its settings. Source management changes connection
-		// and labels; watch/rule/master edits use their scoped, verified routes.
-		old := a.store.Get()
-		for i := range body.Sources {
-			for j := range body.Sources[i].Accounts {
-				next := &body.Sources[i].Accounts[j]
-				found := false
-				for _, s := range old.Sources {
-					for _, ac := range s.Accounts {
-						if ac.ID == next.ID {
-							if s.ID != body.Sources[i].ID {
-								writeErr(w, 400, "account cannot move between sources")
-								return
-							}
-							found = true
-							if next.OneBot.Token == "" {
-								next.OneBot.Token = ac.OneBot.Token
-							}
-							next.Groups, next.Masters, next.Rules = ac.Groups, ac.Masters, ac.Rules
-						}
-					}
-				}
-				if !found {
-					next.Groups = []GroupWatch{}
-					next.Masters = []Master{}
-					next.Rules = nil
-				}
-			}
-		}
-		cfg, err := a.store.Update(func(c *Config) { c.Sources = body.Sources })
+		cfg, err := a.store.updateSources(body.Sources)
 		if err != nil {
 			writeErr(w, 400, err.Error())
 			return

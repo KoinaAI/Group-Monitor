@@ -88,3 +88,43 @@ func TestNotificationAPISecretsAndAuthentication(t *testing.T) {
 		t.Fatal("config leaked device key")
 	}
 }
+
+func TestPipelineBroadcastsWithoutQQMasters(t *testing.T) {
+	var delivered atomic.Int32
+	push := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Message string `json:"message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !strings.Contains(body.Message, "报名截止") {
+			t.Error("notification text missing from provider request")
+		}
+		delivered.Add(1)
+		fmt.Fprint(w, `{}`)
+	}))
+	defer push.Close()
+	a := newTestAPI(t)
+	defer a.pipe.Shutdown()
+	if _, err := a.store.Update(func(c *Config) {
+		c.Enabled = true
+		c.Sources = twoAccountConfig()
+		account := &c.Sources[0].Accounts[0]
+		account.Enabled = true
+		account.Masters = nil
+		account.OneBot = OneBotConfig{HTTPBase: "http://localhost:3100", WSURL: "ws://localhost:3101"}
+		c.NotificationTargets = []NotificationTarget{{ID: "phone", Name: "手机", Kind: "ntfy", Enabled: true, URL: push.URL, Topic: "notices", AccountIDs: []string{"school"}}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	view, hub := a.store.ForAccount("school"), NewHub()
+	pipe := NewPipeline(view, NewOneBot(), hub)
+	defer pipe.Shutdown()
+	pipe.escalate(view.Get(), 42, "校园群", LLMResult{Level: 2, Title: "报名截止", Summary: "明天前提交"}, false)
+	entries := hub.RecentEscalations()
+	if delivered.Load() != 1 || len(entries) != 1 {
+		t.Fatal("broadcast-only account did not record delivery")
+	}
+	entry, ok := entries[0].(map[string]any)
+	if !ok || entry["notified"] != 1 || entry["pushNotified"] != 1 {
+		t.Fatal("broadcast delivery was not counted")
+	}
+}

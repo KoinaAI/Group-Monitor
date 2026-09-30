@@ -612,6 +612,9 @@ func (a *API) handleLLM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.pipe.Reconcile(cfg)
+	if a.sources != nil {
+		a.sources.Reconcile()
+	}
 	a.broadcastStatus()
 	writeJSON(w, 200, redactedConfig(cfg).LLM)
 }
@@ -665,6 +668,9 @@ func (a *API) handleJev(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.pipe.Reconcile(cfg)
+	if a.sources != nil {
+		a.sources.Reconcile()
+	}
 	a.broadcastStatus()
 	writeJSON(w, 200, redactedConfig(cfg).Jev)
 }
