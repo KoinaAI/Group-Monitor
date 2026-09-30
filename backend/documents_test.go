@@ -258,11 +258,6 @@ func TestDocumentReaderCancellationAndNoRedirects(t *testing.T) {
 }
 
 func TestDocumentArchivesRejectMalformedAndOversizedMembers(t *testing.T) {
-	for _, data := range [][]byte{[]byte("bad zip"), documentZIP(t, "word/document.xml", "<unclosed>"), documentZIP(t, "word/document.xml", strings.Repeat("x", maxDocumentXMLBytes+1))} {
-		if _, err := extractDOCX(data, 100); err == nil {
-			t.Fatal("accepted invalid DOCX")
-		}
-	}
 	for _, data := range [][]byte{[]byte("bad zip"), documentZIP(t, "missing.md", "text"), documentZIP(t, "full.md", strings.Repeat("x", maxDocumentXMLBytes+1))} {
 		if _, err := extractMinerUMarkdown(data, 100); err == nil {
 			t.Fatal("accepted invalid MinerU ZIP")

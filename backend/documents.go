@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
@@ -256,84 +255,6 @@ func readDocumentBytes(r io.Reader, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("document exceeds limit")
 	}
 	return b, nil
-}
-
-func extractDOCX(data []byte, maxChars int) (string, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return "", err
-	}
-	if len(zr.File) > 4096 {
-		return "", fmt.Errorf("too many ZIP members")
-	}
-	var doc *zip.File
-	for _, f := range zr.File {
-		if f.Name == "word/document.xml" {
-			if doc != nil {
-				return "", fmt.Errorf("duplicate document XML")
-			}
-			doc = f
-		}
-	}
-	if doc == nil || doc.UncompressedSize64 > maxDocumentXMLBytes {
-		return "", fmt.Errorf("missing or oversized document XML")
-	}
-	r, err := doc.Open()
-	if err != nil {
-		return "", err
-	}
-	defer r.Close()
-	b, err := readDocumentBytes(r, maxDocumentXMLBytes)
-	if err != nil {
-		return "", err
-	}
-	dec := xml.NewDecoder(bytes.NewReader(b))
-	var out strings.Builder
-	inText := false
-	count := 0
-	for {
-		token, err := dec.Token()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-		s := ""
-		switch t := token.(type) {
-		case xml.StartElement:
-			if t.Name.Local == "t" {
-				inText = true
-			}
-			if t.Name.Local == "tab" {
-				s = "\t"
-			}
-			if t.Name.Local == "br" {
-				s = "\n"
-			}
-		case xml.EndElement:
-			if t.Name.Local == "t" {
-				inText = false
-			}
-			if t.Name.Local == "p" || t.Name.Local == "tr" {
-				s = "\n"
-			}
-			if t.Name.Local == "tc" {
-				s = "\t"
-			}
-		case xml.CharData:
-			if inText {
-				s = string(t)
-			}
-		}
-		s = truncateDocumentChars(s, maxChars-count)
-		out.WriteString(s)
-		count += utf8.RuneCountInString(s)
-		if count >= maxChars {
-			break
-		}
-	}
-	return out.String(), nil
 }
 
 type minerUEnvelope struct {
