@@ -13,7 +13,7 @@ RUN --mount=type=secret,id=heroui_key,target=/run/secrets/heroui_key,required=tr
     npx -y hpsetup@latest react --auto
 RUN npm run build
 
-FROM golang:1.22-alpine AS backend-build
+FROM golang:1.25-alpine AS backend-build
 
 WORKDIR /src/backend
 ARG TARGETOS
