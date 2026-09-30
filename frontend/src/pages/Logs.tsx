@@ -35,7 +35,7 @@ export default function Logs() {
     <Page>
       <PageHeader title="运行日志" description="追踪消息处理过程，定位升级与投递问题。" actions={<IntentChip intent={connected ? 'success' : 'warning'}>{connected ? '实时同步' : '正在重连'}</IntentChip>} />
       <Widget>
-        <Widget.Header className="flex-wrap gap-y-2 py-2">
+          <Widget.Header className="flex-wrap gap-y-2 py-1.5">
           <div className="flex items-center gap-3">
             <Widget.Title>事件流</Widget.Title>
             <Widget.Description className="tabular-nums">共 {logs.length} 条 · 最新在前</Widget.Description>
@@ -45,7 +45,7 @@ export default function Logs() {
           </TextField>
         </Widget.Header>
         <Widget.Content className="!p-0">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5">
             <div className="max-w-full overflow-x-auto">
               <Segment aria-label="日志级别筛选" size="sm" selectedKey={filter} onSelectionChange={(key) => setFilter(key as LogLevel | 'all')}>
                 {FILTERS.map((item) => <Segment.Item key={item.key} id={item.key}>{item.label}</Segment.Item>)}
@@ -59,14 +59,14 @@ export default function Logs() {
             <ScrollShadow className="max-h-[calc(100dvh-18rem)] min-h-48 overflow-y-auto px-4">
               <ul className="divide-y divide-border/60">
                 {rows.map((entry, index) => (
-                  <li key={`${entry.ts}-${index}`} className="grid gap-x-4 gap-y-1.5 py-3 sm:grid-cols-[9rem_3.5rem_minmax(0,1fr)]">
-                    <span className="text-xs leading-6 tabular-nums text-muted">{fmtDateTime(entry.ts)}</span>
+                  <li key={`${entry.ts}-${index}`} className="grid gap-x-3 gap-y-1 py-2.5 sm:grid-cols-[8.5rem_3.5rem_minmax(0,1fr)]">
+                    <span className="text-xs leading-5 tabular-nums text-muted">{fmtDateTime(entry.ts)}</span>
                     <div className="row-start-1 justify-self-end sm:col-start-2 sm:justify-self-start">
                       <IntentChip intent={logLevelIntent[entry.level]}>{logLevelLabel[entry.level]}</IntentChip>
                     </div>
                     <div className="min-w-0 sm:col-start-3 sm:row-start-1">
-                      <p className="break-words text-sm leading-6">{entry.text}</p>
-                      {entry.group ? <p className="mt-0.5 truncate text-xs text-muted">{entry.group}</p> : null}
+                      <p className="break-words text-sm leading-5">{entry.text}</p>
+                      {entry.group ? <p className="truncate text-xs leading-5 text-muted">{entry.group}</p> : null}
                     </div>
                   </li>
                 ))}
