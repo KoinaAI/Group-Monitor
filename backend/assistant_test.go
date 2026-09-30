@@ -27,6 +27,27 @@ func assistantCall(name, args string) historyToolCall {
 	return call
 }
 
+func TestAssistantIgnoresReasoningContent(t *testing.T) {
+	a := assistantTest(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("unexpected endpoint %s", r.URL.Path)
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"reasoning_content":"private thoughts","content":"公开答案"}}]}`)
+	}))
+	defer srv.Close()
+
+	answer, err := a.answer(context.Background(), LLMConfig{BaseURL: srv.URL, Timeout: 1}, 1, "最近的通知")
+	if err != nil || answer != "公开答案" {
+		t.Fatalf("answer=%q err=%v", answer, err)
+	}
+	if strings.Contains(answer, "private thoughts") {
+		t.Fatalf("reasoning content leaked into answer: %q", answer)
+	}
+}
+
 func TestAssistantArchiveToolCycleAndScope(t *testing.T) {
 	a := assistantTest(t)
 	for _, n := range []NoticeRecord{

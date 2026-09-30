@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -55,8 +56,8 @@ var noticeSearchTool = historyTool{
 }
 
 // callLLMWithHistoryContext lets the model explicitly request history without
-// sending historical notices on every classification. One timeout covers the
-// entire exchange, including a compatibility fallback for endpoints lacking tools.
+// sending historical notices on every classification. Each model request has
+// a first-response timeout; later body bytes are allowed to finish normally.
 func callLLMWithHistoryContext(parent context.Context, cfg LLMConfig, transcript string, store *NoticeStore, groupID int64) (LLMResult, string, error) {
 	if store == nil || groupID <= 0 {
 		return callLLMContext(parent, cfg, transcript)
@@ -67,14 +68,10 @@ func callLLMWithHistoryContext(parent context.Context, cfg LLMConfig, transcript
 	if err := validateHTTPURL(cfg.BaseURL); err != nil {
 		return LLMResult{}, "", err
 	}
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 45
-	}
-	ctx, cancel := context.WithTimeout(parent, time.Duration(timeout)*time.Second)
-	defer cancel()
+	ctx := parent
 	body := chatReq{
 		Model:    cfg.Model,
+		Stream:   true,
 		Messages: []chatMsg{{Role: "system", Content: systemPrompt + historyPrompt}, {Role: "user", Content: transcript}},
 		Tools:    []historyTool{noticeSearchTool}, ToolChoice: "auto",
 	}
@@ -124,16 +121,29 @@ func requestHistoryLLM(ctx context.Context, cfg LLMConfig, body chatReq) (chatMs
 		return chatMsg{}, false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
-	resp, err := noRedirectClient(http.DefaultClient).Do(req)
+	to := cfg.Timeout
+	if to <= 0 {
+		to = 45
+	}
+	resp, requestCancel, firstResponseDeadline, err := doLLMRequestFirstResponse(ctx, req, time.Duration(to)*time.Second)
 	if err != nil {
 		return chatMsg{}, false, err
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxLLMResponseBytes+1))
+	defer requestCancel()
+	responseBody := &firstResponseReader{reader: resp.Body, deadline: firstResponseDeadline, cancel: requestCancel}
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		message, unsupported, err := readHistorySSE(responseBody)
+		if err != nil {
+			return chatMsg{}, unsupported, err
+		}
+		return message, false, nil
+	}
+	raw, err := io.ReadAll(io.LimitReader(responseBody, maxLLMResponseBytes+1))
 	if err != nil {
 		return chatMsg{}, false, fmt.Errorf("read LLM response: %w", err)
 	}
@@ -163,6 +173,64 @@ func requestHistoryLLM(ctx context.Context, cfg LLMConfig, body chatReq) (chatMs
 		return chatMsg{}, false, fmt.Errorf("LLM returned no choices")
 	}
 	return response.Choices[0].Message, false, nil
+}
+
+// readHistorySSE assembles streamed answer text and fragmented tool calls.
+// reasoning_content is intentionally ignored and never reaches the caller.
+func readHistorySSE(r io.Reader) (chatMsg, bool, error) {
+	message := chatMsg{Role: "assistant"}
+	var content strings.Builder
+	calls := make(map[int]*historyToolCall)
+	order := []int{}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), maxLLMResponseBytes)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
+			break
+		}
+		var chunk streamChunk
+		if err := json.Unmarshal([]byte(payload), &chunk); err != nil {
+			continue
+		}
+		if chunk.Error != nil {
+			return message, false, fmt.Errorf("LLM error: %s", chunk.Error.Message)
+		}
+		for _, choice := range chunk.Choices {
+			if content.Len()+len(choice.Delta.Content) > maxLLMResponseBytes {
+				return message, false, fmt.Errorf("LLM response too large")
+			}
+			content.WriteString(choice.Delta.Content)
+			for _, delta := range choice.Delta.ToolCalls {
+				call, ok := calls[delta.Index]
+				if !ok {
+					call = &historyToolCall{Type: "function"}
+					calls[delta.Index] = call
+					order = append(order, delta.Index)
+				}
+				if delta.ID != "" {
+					call.ID = delta.ID
+				}
+				if delta.Type != "" {
+					call.Type = delta.Type
+				}
+				call.Function.Name += delta.Function.Name
+				call.Function.Arguments += delta.Function.Arguments
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return message, false, fmt.Errorf("stream read error: %v", err)
+	}
+	message.Content = content.String()
+	for _, index := range order {
+		message.ToolCalls = append(message.ToolCalls, *calls[index])
+	}
+	return message, false, nil
 }
 
 func executeNoticeSearch(ctx context.Context, store *NoticeStore, groupID int64, call historyToolCall) string {

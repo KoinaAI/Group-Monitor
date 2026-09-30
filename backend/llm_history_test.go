@@ -29,8 +29,28 @@ func historyTestCall(id, arguments string) historyToolCall {
 }
 
 func writeHistoryTestMessage(w http.ResponseWriter, message chatMsg) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": message}}})
+	w.Header().Set("Content-Type", "text/event-stream")
+	delta := map[string]any{}
+	if message.Content != "" {
+		delta["content"] = message.Content
+	}
+	if len(message.ToolCalls) > 0 {
+		calls := make([]map[string]any, 0, len(message.ToolCalls))
+		for index, call := range message.ToolCalls {
+			calls = append(calls, map[string]any{
+				"index": index,
+				"id":    call.ID,
+				"type":  call.Type,
+				"function": map[string]string{
+					"name":      call.Function.Name,
+					"arguments": call.Function.Arguments,
+				},
+			})
+		}
+		delta["tool_calls"] = calls
+	}
+	payload, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": delta}}})
+	fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", payload)
 }
 
 func TestLLMHistoryRetrievesOlderNoticeWithinCurrentGroup(t *testing.T) {
@@ -57,7 +77,7 @@ func TestLLMHistoryRetrievesOlderNoticeWithinCurrentGroup(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Error(err)
 		}
-		if body.Stream || len(body.Tools) != 1 || r.Header.Get("Authorization") != "Bearer secret" {
+		if !body.Stream || len(body.Tools) != 1 || r.Header.Get("Authorization") != "Bearer secret" {
 			t.Errorf("bad request contract: %+v", body)
 		}
 		if requests == 1 {
@@ -177,5 +197,73 @@ func TestLLMHistoryCancellationStopsFurtherRequests(t *testing.T) {
 	_, _, err := callLLMWithHistoryContext(ctx, LLMConfig{BaseURL: srv.URL}, "上次体检", historyTestStore(t), 42)
 	if err == nil || requests.Load() != 1 {
 		t.Fatalf("cancelled request count=%d err=%v", requests.Load(), err)
+	}
+}
+
+func TestLLMHistoryFirstResponseTimeoutAndReasoningHandling(t *testing.T) {
+	t.Run("reasoning is excluded and active body is not cut off", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"choices":[{"message":{"reasoning_content":"private thoughts","content":"{`)
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			time.Sleep(1200 * time.Millisecond)
+			fmt.Fprint(w, `\"useful\":true,\"level\":1,\"title\":\"历史通知\",\"summary\":\"明日提交\"}"}}]}`)
+		}))
+		defer srv.Close()
+
+		started := time.Now()
+		got, raw, err := callLLMWithHistoryContext(context.Background(), LLMConfig{BaseURL: srv.URL, Timeout: 1}, "上次通知是什么", historyTestStore(t), 42)
+		if err != nil || got.Title != "历史通知" || raw != `{"useful":true,"level":1,"title":"历史通知","summary":"明日提交"}` {
+			t.Fatalf("history response = %+v raw=%q err=%v", got, raw, err)
+		}
+		if strings.Contains(raw, "private thoughts") || time.Since(started) < 1100*time.Millisecond {
+			t.Fatalf("response was truncated or reasoning leaked: raw=%q elapsed=%s", raw, time.Since(started))
+		}
+	})
+
+	t.Run("times out before first response bytes", func(t *testing.T) {
+		started := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			close(started)
+			<-r.Context().Done()
+		}))
+		defer srv.Close()
+
+		began := time.Now()
+		_, _, err := callLLMWithHistoryContext(context.Background(), LLMConfig{BaseURL: srv.URL, Timeout: 1}, "上次通知是什么", historyTestStore(t), 42)
+		if err == nil || !strings.Contains(err.Error(), "first response timeout") {
+			t.Fatalf("error = %v, want first-response timeout", err)
+		}
+		if elapsed := time.Since(began); elapsed < 850*time.Millisecond || elapsed > 3*time.Second {
+			t.Fatalf("timeout elapsed = %s, want about one second", elapsed)
+		}
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("server did not receive the request")
+		}
+	})
+}
+
+func TestReadHistorySSEPreservesFragmentedToolCalls(t *testing.T) {
+	input := strings.Join([]string{
+		`data: {"choices":[{"delta":{"reasoning_content":"private","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"search_","arguments":"{\"query\":\"体"}}]}}]}`,
+		`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"notices","arguments":"检\"}"}}]}}]}`,
+		"data: [DONE]",
+		"",
+	}, "\n\n")
+	message, unsupported, err := readHistorySSE(strings.NewReader(input))
+	if err != nil || unsupported || message.Content != "" || len(message.ToolCalls) != 1 {
+		t.Fatalf("SSE message=%+v unsupported=%v err=%v", message, unsupported, err)
+	}
+	call := message.ToolCalls[0]
+	if call.ID != "call-1" || call.Type != "function" || call.Function.Name != "search_notices" || call.Function.Arguments != `{"query":"体检"}` {
+		t.Fatalf("fragmented tool call=%+v", call)
 	}
 }

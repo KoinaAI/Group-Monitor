@@ -108,15 +108,7 @@ func assistantAuthorized(cfg Config, userID int64) bool {
 
 func (a *Assistant) handle(pm PrivateMessage) {
 	cfg := a.store.Get()
-	timeout := cfg.LLM.Timeout
-	if timeout <= 0 {
-		timeout = 45
-	}
-	if timeout > 90 {
-		timeout = 90
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
+	ctx := a.ctx
 	answer := "助手暂不可用，请先在控制台配置并启用模型。"
 	if cfg.LLM.Enabled && strings.TrimSpace(cfg.LLM.BaseURL) != "" {
 		var err error

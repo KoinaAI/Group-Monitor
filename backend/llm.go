@@ -115,6 +115,15 @@ type streamChunk struct {
 		Delta struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
+			ToolCalls        []struct {
+				Index    int    `json:"index"`
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
 	} `json:"choices"`
@@ -149,10 +158,6 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 	// The configured timeout is a first-response budget. Once the endpoint has
 	// emitted the first response bytes, an intentionally long stream must be
 	// allowed to finish instead of being truncated by the same deadline.
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	firstResponseDeadline := time.Now().Add(time.Duration(to) * time.Second)
-
 	body := chatReq{
 		Model:  cfg.Model,
 		Stream: true,
@@ -166,7 +171,7 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 		return res, "", fmt.Errorf("LLM request too large")
 	}
 	url := strings.TrimRight(cfg.BaseURL, "/") + "/chat/completions"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(parent, http.MethodPost, url, bytes.NewReader(b))
 	if err != nil {
 		return res, "", err
 	}
@@ -175,36 +180,7 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 	if cfg.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	}
-	// Do the request under the first-response budget as well. A server that
-	// never sends response headers must not leave the classifier blocked
-	// forever. The response channel is buffered so the worker can finish
-	// cleanly if the timeout path cancels the request.
-	type doResult struct {
-		resp *http.Response
-		err  error
-	}
-	done := make(chan doResult, 1)
-	go func() {
-		resp, err := noRedirectClient(http.DefaultClient).Do(req)
-		if err == nil && ctx.Err() != nil && resp != nil {
-			_ = resp.Body.Close()
-			resp = nil
-		}
-		done <- doResult{resp: resp, err: err}
-	}()
-	timer := time.NewTimer(time.Until(firstResponseDeadline))
-	defer timer.Stop()
-	var resp *http.Response
-	select {
-	case result := <-done:
-		resp, err = result.resp, result.err
-	case <-timer.C:
-		cancel()
-		return res, "", fmt.Errorf("LLM first response timeout after %ds", to)
-	case <-parent.Done():
-		cancel()
-		return res, "", parent.Err()
-	}
+	resp, requestCancel, firstResponseDeadline, err := doLLMRequestFirstResponse(parent, req, time.Duration(to)*time.Second)
 	if err != nil {
 		return res, "", err
 	}
@@ -212,10 +188,11 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 		return res, "", fmt.Errorf("LLM first response unavailable")
 	}
 	defer resp.Body.Close()
+	defer requestCancel()
 	responseBody := &firstResponseReader{
 		reader:   resp.Body,
 		deadline: firstResponseDeadline,
-		cancel:   cancel,
+		cancel:   requestCancel,
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(responseBody, 4096))
@@ -262,6 +239,54 @@ func callLLMContext(parent context.Context, cfg LLMConfig, userContent string) (
 		return res, content, err
 	}
 	return parsed, content, nil
+}
+
+// doLLMRequestFirstResponse bounds waiting for response headers without
+// attaching a deadline to the request context. The request context is kept
+// cancellable so the first body read can stop it on timeout, while successful
+// responses remain alive for the rest of their body/stream.
+type llmDoResult struct {
+	resp *http.Response
+	err  error
+}
+
+func doLLMRequestFirstResponse(parent context.Context, req *http.Request, timeout time.Duration) (*http.Response, context.CancelFunc, time.Time, error) {
+	ctx, cancel := context.WithCancel(parent)
+	req = req.WithContext(ctx)
+	deadline := time.Now().Add(timeout)
+	done := make(chan llmDoResult, 1)
+	go func() {
+		resp, err := noRedirectClient(http.DefaultClient).Do(req)
+		if err == nil && ctx.Err() != nil && resp != nil {
+			_ = resp.Body.Close()
+			resp = nil
+		}
+		done <- llmDoResult{resp: resp, err: err}
+	}()
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case result := <-done:
+		if result.err != nil {
+			cancel()
+		}
+		return result.resp, cancel, deadline, result.err
+	case <-timer.C:
+		cancel()
+		go closeLateLLMResponse(done)
+		return nil, func() {}, deadline, fmt.Errorf("LLM first response timeout after %s", timeout)
+	case <-parent.Done():
+		cancel()
+		go closeLateLLMResponse(done)
+		return nil, func() {}, deadline, parent.Err()
+	}
+}
+
+func closeLateLLMResponse(done <-chan llmDoResult) {
+	result := <-done
+	if result.resp != nil && result.resp.Body != nil {
+		_ = result.resp.Body.Close()
+	}
 }
 
 // firstResponseReader applies the LLM timeout only to the first read. It
