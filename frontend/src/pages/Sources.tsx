@@ -7,6 +7,7 @@ import { TextSetting } from '../components/ui/TextSetting'
 import { Loader } from '../components/Loader'
 import { api } from '../lib/api'
 import { activeAccount, selectAccount, newAccount } from '../lib/accounts'
+import { uid } from '../lib/id'
 import type { SourceConfig, SourceStatus } from '../lib/types'
 import { AccountFields } from './sources/AccountFields'
 
@@ -56,7 +57,7 @@ export default function Sources() {
           <Button variant="secondary" className="self-start" onPress={() => patch(source.id, { accounts: [...source.accounts, newAccount()] })}>添加账号</Button>
         </div>
       </SectionCard>)}
-      <Button variant="secondary" className="self-start" onPress={() => setSources([...sources, { id: crypto.randomUUID(), name: 'NapCat', kind: 'napcat', accounts: [] }])}>添加 NapCat 信息源</Button>
+      <Button variant="secondary" className="self-start" onPress={() => setSources([...sources, { id: uid(), name: 'NapCat', kind: 'napcat', accounts: [] }])}>添加 NapCat 信息源</Button>
     </div>}
   </Page>
 }

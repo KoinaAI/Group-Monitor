@@ -7,6 +7,7 @@ import { TextSetting } from '../components/ui/TextSetting'
 import { NumberSetting } from '../components/ui/NumberSetting'
 import { Toggle } from '../components/ui/Toggle'
 import { api } from '../lib/api'
+import { uid } from '../lib/id'
 import type { NotificationTarget, SourceConfig } from '../lib/types'
 
 export default function Notifications() {
@@ -33,7 +34,7 @@ export default function Notifications() {
     catch (e) { setError(e instanceof Error ? e.message : '发送失败') }
     finally { setBusy(false) }
   }
-  const add = (kind: 'ntfy' | 'bark') => setTargets([...targets, { id: crypto.randomUUID(), name: kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送', kind, enabled: true, url: kind === 'ntfy' ? 'https://ntfy.sh' : 'https://api.day.app', minLevel: 1, group: '讯枢', accountIds: [] }])
+  const add = (kind: 'ntfy' | 'bark') => setTargets([...targets, { id: uid(), name: kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送', kind, enabled: true, url: kind === 'ntfy' ? 'https://ntfy.sh' : 'https://api.day.app', minLevel: 1, group: '讯枢', accountIds: [] }])
   return <Page>
     <PageHeader title="广播通知" description="通过 ntfy 主题或 Bark 设备推送正式提醒。" actions={<Button isPending={busy} onPress={save}>保存通知目标</Button>} />
     {error && <p role="alert" className="mb-4 text-sm text-danger">{error}</p>}

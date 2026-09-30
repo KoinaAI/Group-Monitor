@@ -1,4 +1,5 @@
 import { newAccount } from '../lib/accounts'
+import { uid } from '../lib/id'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card } from '@heroui/react'
@@ -29,7 +30,7 @@ export default function Setup() {
   const complete = async () => {
     setBusy(true); setError('')
     try {
-      await api.setup.complete({ setupToken: token.trim(), password, ...(llm.enabled ? { llm } : {}), ...(addSource ? { sources: [{ id: crypto.randomUUID(), name: 'NapCat', kind: 'napcat', accounts: [account] }] } : {}) })
+      await api.setup.complete({ setupToken: token.trim(), password, ...(llm.enabled ? { llm } : {}), ...(addSource ? { sources: [{ id: uid(), name: 'NapCat', kind: 'napcat', accounts: [account] }] } : {}) })
       navigate('/sources', { replace: true })
     } catch (e) { setError(e instanceof Error ? e.message : '初始化失败') }
     finally { setBusy(false) }

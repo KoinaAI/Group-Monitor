@@ -1,4 +1,5 @@
 import type { SourceAccount } from './types'
+import { uid } from './id'
 const key = 'xunshu-account'
 let pageAccount = localStorage.getItem(key) ?? ''
 // Archive links use full navigation so every request and media URL starts in
@@ -25,5 +26,5 @@ export function scopedURL(path: string) {
 }
 
 export function newAccount(): SourceAccount {
-  return { id: crypto.randomUUID(), name: '新账号', enabled: true, onebot: { httpBase: '', wsUrl: '', token: '' }, groups: [], masters: [] }
+  return { id: uid(), name: '新账号', enabled: true, onebot: { httpBase: '', wsUrl: '', token: '' }, groups: [], masters: [] }
 }
