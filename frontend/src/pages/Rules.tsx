@@ -20,6 +20,8 @@ export default function Rules() {
   const [rules, setRules] = useState<RulesConfig | null>(null)
   const [saved, setSaved] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [message, setMessage] = useState('')
 
   useEffect(() => {
     if (!config) return
@@ -33,14 +35,23 @@ export default function Rules() {
   }, [config])
 
   const dirty = !!rules && JSON.stringify(rules) !== saved
-  const patch = (p: Partial<RulesConfig>) => setRules((r) => (r ? { ...r, ...p } : r))
+  const patch = (p: Partial<RulesConfig>) => {
+    setRules((r) => (r ? { ...r, ...p } : r))
+    setMessage('')
+    setSaveError('')
+  }
   const save = async () => {
     if (!rules) return
     setSaving(true)
+    setSaveError('')
+    setMessage('')
     try {
       const r = await api.rules.save(rules)
       setRules(r)
       setSaved(JSON.stringify(r))
+      setMessage('规则已保存')
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : '保存失败，请重试')
     } finally {
       setSaving(false)
     }
@@ -51,14 +62,10 @@ export default function Rules() {
       <PageHeader
         title="规则"
         description="消息聚合、紧急判定与发送者级别"
-        actions={
-          dirty ? (
-            <Button onPress={save} isPending={saving}>
-              保存更改
-            </Button>
-          ) : null
-        }
+        actions={<Button size="sm" onPress={save} isPending={saving} isDisabled={!dirty}>保存更改</Button>}
       />
+      {saveError && <p role="alert" className="mb-4 text-sm text-danger">{saveError}</p>}
+      {message && <p role="status" className="mb-4 text-sm text-success">{message}</p>}
       {loading || !rules ? (
         error ? (
           <InlineError message={error} onRetry={reload} />
@@ -66,9 +73,9 @@ export default function Rules() {
           <Loader label="正在加载配置…" />
         )
       ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
+        <fieldset disabled={saving} className="grid min-w-0 items-start gap-4 lg:grid-cols-2">
           <SectionCard title="静默窗口" description="窗口内的消息合并为一次升级推送">
-            <div className="flex flex-col gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
               <NumberSetting
                 label="静默窗口（秒）"
                 description="收到首条消息后等待更多消息的时长"
@@ -108,7 +115,6 @@ export default function Rules() {
           <SectionCard
             title="紧急关键词"
             description="命中任一关键词即判定为紧急"
-            className="lg:col-span-2"
           >
             <KeywordEditor
               value={rules.urgentKeywords}
@@ -118,14 +124,13 @@ export default function Rules() {
           <SectionCard
             title="发送者级别覆盖"
             description="为特定成员设定固定的发送者级别"
-            className="lg:col-span-2"
           >
             <OverrideEditor
               value={rules.senderOverrides}
               onChange={(v) => patch({ senderOverrides: v })}
             />
           </SectionCard>
-        </div>
+        </fieldset>
       )}
     </Page>
   )

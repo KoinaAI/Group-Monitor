@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Button, Input, Label, ListBox, Select, TextField, Tooltip } from '@heroui/react'
+import { Button, Input, TextField, Tooltip } from '@heroui/react'
+import { NativeSelect } from '@heroui-pro/react'
 import { AppIcon } from '../../lib/icons'
 import { overrideLevelLabel } from '../../lib/labels'
 import type { SenderOverride, SenderOverrideLevel } from '../../lib/types'
@@ -43,42 +44,23 @@ export function OverrideEditor({
       {value.length ? (
         <ul className="flex flex-col divide-y divide-border">
           {value.map((o) => (
-            <li key={o.userId} className="flex items-center gap-2 py-2.5 first:pt-0 last:pb-0">
-              <span className="w-24 shrink-0 truncate text-sm tabular-nums text-foreground">
+            <li key={o.userId} className="grid grid-cols-[1fr_7rem_auto] items-center gap-2 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[6rem_1fr_7rem_auto]">
+              <span className="col-span-3 truncate text-sm tabular-nums text-foreground sm:col-span-1">
                 {o.userId}
               </span>
               <TextField
                 aria-label="备注"
                 value={o.note}
                 onChange={(v) => update(o.userId, { note: v })}
-                className="flex-1"
+                className="min-w-0"
               >
                 <Input placeholder="备注（可选）" variant="secondary" />
               </TextField>
-              <Select
-                aria-label="级别"
-                variant="secondary"
-                selectionMode="single"
-                value={o.level}
-                onChange={(v) => {
-                  if (v != null) update(o.userId, { level: String(v) as SenderOverrideLevel })
-                }}
-                className="w-28"
-              >
-                <Select.Trigger>
-                  <Select.Value />
-                  <Select.Indicator />
-                </Select.Trigger>
-                <Select.Popover>
-                  <ListBox>
-                    {LEVELS.map((lv) => (
-                      <ListBox.Item key={lv} id={lv} textValue={overrideLevelLabel[lv]}>
-                        <Label>{overrideLevelLabel[lv]}</Label>
-                      </ListBox.Item>
-                    ))}
-                  </ListBox>
-                </Select.Popover>
-              </Select>
+              <NativeSelect variant="secondary" className="w-28">
+                <NativeSelect.Trigger aria-label="级别" value={o.level} onChange={(event) => update(o.userId, { level: event.target.value as SenderOverrideLevel })}>
+                  {LEVELS.map((level) => <NativeSelect.Option key={level} value={level}>{overrideLevelLabel[level]}</NativeSelect.Option>)}
+                </NativeSelect.Trigger>
+              </NativeSelect>
               <Tooltip>
                 <Button
                   size="sm"

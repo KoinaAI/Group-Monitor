@@ -11,15 +11,26 @@ export function OneBotForm({ initial }: { initial: OneBotConfig }) {
   const [ob, setOb] = useState<OneBotConfig>(initial)
   const [saved, setSaved] = useState(() => JSON.stringify(initial))
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
   const dirty = JSON.stringify(ob) !== saved
-  const set = (p: Partial<OneBotConfig>) => setOb((s) => ({ ...s, ...p }))
+  const set = (p: Partial<OneBotConfig>) => {
+    setOb((s) => ({ ...s, ...p }))
+    setMessage('')
+    setError('')
+  }
 
   const save = async () => {
     setSaving(true)
+    setError('')
+    setMessage('')
     try {
       const r = await api.onebot.save(ob)
       setOb(r)
       setSaved(JSON.stringify(r))
+      setMessage('连接配置已保存')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存失败，请重试')
     } finally {
       setSaving(false)
     }
@@ -37,7 +48,7 @@ export function OneBotForm({ initial }: { initial: OneBotConfig }) {
         ) : null
       }
     >
-      <div className="flex flex-col gap-4">
+      <fieldset disabled={saving} className="grid min-w-0 gap-4 md:grid-cols-3">
         <TextSetting
           label="HTTP Base"
           description="OneBot HTTP API 地址"
@@ -62,7 +73,9 @@ export function OneBotForm({ initial }: { initial: OneBotConfig }) {
           placeholder="access token"
           type="password"
         />
-      </div>
+      </fieldset>
+      {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+      {message && <p role="status" className="mt-3 text-sm text-success">{message}</p>}
     </SectionCard>
   )
 }
