@@ -14,6 +14,8 @@ import (
 )
 
 type API struct {
+	setup     *setupState
+	sources   *SourceManager
 	store     *Store
 	ob        *OneBot
 	hub       *Hub
@@ -58,6 +60,8 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) er
 
 func redactedConfig(c Config) Config {
 	c = cloneConfig(c)
+	c.Security.PasswordHash = ""
+	c.Sources = redactedSources(c.Sources)
 	c.OneBot.Token = ""
 	c.LLM.APIKey = ""
 	c.Jev.APIKey = ""
@@ -74,7 +78,7 @@ func NewAPI(store *Store, ob *OneBot, hub *Hub, pipe *Pipeline) *API {
 			ttl = time.Duration(n) * time.Hour
 		}
 	}
-	return &API{
+	a := &API{
 		store:    store,
 		ob:       ob,
 		hub:      hub,
@@ -82,6 +86,10 @@ func NewAPI(store *Store, ob *OneBot, hub *Hub, pipe *Pipeline) *API {
 		sessions: newSessionStore(ttl),
 		password: os.Getenv("NAP_PASSWORD"),
 	}
+	if store.parent == nil {
+		a.initializeSetup()
+	}
+	return a
 }
 
 func (a *API) SetNoticeStore(store *NoticeStore) { a.notices = store }
@@ -90,16 +98,19 @@ func (a *API) SetBackupManager(backup *BackupManager) { a.backup = backup }
 
 func (a *API) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
+	a.registerSetupRoutes(mux)
 
 	// Public endpoints: the login gate itself. Everything else needs a session.
-	mux.HandleFunc("/api/auth/status", a.handleAuthStatus)      // which methods are available + am I authed
-	mux.HandleFunc("/api/auth/otp/request", a.handleOtpRequest) // POST: DM a login OTP to masters
-	mux.HandleFunc("/api/auth/otp/verify", a.handleOtpVerify)   // POST: verify OTP → session
-	mux.HandleFunc("/api/auth/password", a.handlePassword)      // POST: break-glass password → session
-	mux.HandleFunc("/api/auth/logout", a.handleLogout)          // POST: revoke session
+	mux.HandleFunc("/api/auth/status", a.accountHandler("/api/auth/status", a.handleAuthStatus))
+	mux.HandleFunc("/api/auth/otp/request", a.accountHandler("/api/auth/otp/request", a.handleOtpRequest))
+	mux.HandleFunc("/api/auth/otp/verify", a.accountHandler("/api/auth/otp/verify", a.handleOtpVerify))
+	mux.HandleFunc("/api/auth/password", a.handlePassword) // POST: break-glass password → session
+	mux.HandleFunc("/api/auth/logout", a.handleLogout)     // POST: revoke session
 
 	// Protected endpoints: require a valid session cookie.
 	protected := map[string]http.HandlerFunc{
+		"/api/sources":                a.handleSources,
+		"/api/sources/status":         a.handleSourceStatus,
 		"/api/status":                 a.handleStatus,
 		"/api/config":                 a.handleConfig,
 		"/api/groups":                 a.handleGroups,              // live group list from NapCat
@@ -131,7 +142,7 @@ func (a *API) Routes() *http.ServeMux {
 		"/api/events":                 a.handleSSE, // SSE stream
 	}
 	for path, h := range protected {
-		mux.HandleFunc(path, a.requireAuth(h))
+		mux.HandleFunc(path, a.requireAuth(a.accountHandler(path, h)))
 	}
 	return mux
 }
@@ -739,6 +750,9 @@ func (a *API) handleEnabled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.pipe.Reconcile(cfg)
+	if a.sources != nil {
+		a.sources.Reconcile()
+	}
 	a.hub.Log("info", 0, "", fmt.Sprintf("全局监听已%s", ternary(cfg.Enabled, "开启", "暂停")))
 	a.broadcastStatus()
 	writeJSON(w, 200, map[string]any{"enabled": cfg.Enabled})

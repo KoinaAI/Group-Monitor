@@ -38,25 +38,22 @@ func main() {
 	pipe.SetNoticeStore(notices)
 	defer pipe.Shutdown()
 	defer ob.Shutdown()
-	assistant := NewAssistant(store, ob, hub, notices)
-	defer assistant.Shutdown()
 
 	// Wire OneBot events into the pipeline.
 	ob.onEvent = pipe.Ingest
-	ob.onPrivate = func(pm PrivateMessage) { assistant.Submit(pm) }
 	// Track connection transitions for the live status.
 	rootCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go watchConnection(rootCtx, ob, hub)
 	backup := NewBackupManager(store, notices, hub)
 	backup.Start(rootCtx)
-
-	cfg := store.Get()
-	ob.Reconfigure(cfg.OneBot)
 
 	api := NewAPI(store, ob, hub, pipe)
 	api.SetNoticeStore(notices)
 	api.SetBackupManager(backup)
+	sources := NewSourceManager(api)
+	api.sources = sources
+	sources.Reconcile()
+	defer sources.Shutdown()
 	mux := api.Routes()
 
 	srv := &http.Server{
@@ -81,7 +78,7 @@ func main() {
 			_ = srv.Close()
 		}
 		cancel()
-		assistant.Shutdown()
+		sources.Shutdown()
 		pipe.Shutdown()
 		ob.Shutdown()
 		<-serverErr

@@ -29,6 +29,8 @@ type NoticeSource struct {
 
 // NoticeRecord is the durable representation of a useful notification.
 type NoticeRecord struct {
+	SourceID   string         `json:"sourceId,omitempty"`
+	AccountID  string         `json:"accountId,omitempty"`
 	ID         string         `json:"id"`
 	CreatedAt  int64          `json:"createdAt"`
 	GroupID    int64          `json:"groupId"`
@@ -40,16 +42,21 @@ type NoticeRecord struct {
 }
 
 type NoticeQuery struct {
-	GroupID  int64
-	Query    string
-	Limit    int
-	Before   int64  // createdAt cursor; zero means newest
-	BeforeID string // tie-breaker when multiple notices share a millisecond
+	AccountID     string
+	IncludeLegacy bool
+	GroupID       int64
+	Query         string
+	Limit         int
+	Before        int64  // createdAt cursor; zero means newest
+	BeforeID      string // tie-breaker when multiple notices share a millisecond
 }
 
 // NoticeStore is an append-only, date-sharded JSONL store. It is intentionally
 // independent from config.json so a corrupt notice file cannot prevent startup.
 type NoticeStore struct {
+	parent    *NoticeStore
+	sourceID  string
+	accountID string
 	dir       string
 	mu        sync.RWMutex
 	ids       map[string]string
@@ -129,6 +136,15 @@ func noticeID(groupID int64, ids []int64, sources []NoticeSource, result LLMResu
 func (s *NoticeStore) Append(n NoticeRecord) (bool, error) {
 	if s == nil {
 		return false, nil
+	}
+	if s.parent != nil {
+		n.SourceID, n.AccountID = s.sourceID, s.accountID
+		if n.ID == "" {
+			n.ID = noticeID(n.GroupID, n.MessageIDs, n.Sources, n.Result, n.Urgent)
+		}
+		sum := sha256.Sum256([]byte(n.SourceID + ":" + n.AccountID + ":" + n.ID))
+		n.ID = hex.EncodeToString(sum[:16])
+		return s.parent.Append(n)
 	}
 	if len(n.Result.Summary) > maxNoticeText {
 		n.Result.Summary = limitText(n.Result.Summary, maxNoticeText)
@@ -269,6 +285,11 @@ func (s *NoticeStore) QueryContext(ctx context.Context, q NoticeQuery) ([]Notice
 	if s == nil {
 		return out, nil
 	}
+	if s.parent != nil {
+		q.AccountID = s.accountID
+		q.IncludeLegacy = s.accountID == legacyAccountID
+		return s.parent.QueryContext(ctx, q)
+	}
 	if q.Limit <= 0 || q.Limit > maxNoticeQuery {
 		q.Limit = 30
 	}
@@ -318,6 +339,9 @@ func (s *NoticeStore) QueryContext(ctx context.Context, q NoticeQuery) ([]Notice
 			if q.GroupID != 0 && n.GroupID != q.GroupID {
 				continue
 			}
+			if q.AccountID != "" && n.AccountID != q.AccountID && !(q.IncludeLegacy && n.AccountID == "") {
+				continue
+			}
 			if q.Before != 0 && (n.CreatedAt > q.Before || n.CreatedAt == q.Before && (q.BeforeID == "" || n.ID >= q.BeforeID)) {
 				continue
 			}
@@ -346,3 +370,11 @@ func (s *NoticeStore) QueryContext(ctx context.Context, q NoticeQuery) ([]Notice
 }
 
 func (s *NoticeStore) Close() error { return nil }
+
+// ForAccount shares the bounded archive while enforcing an account namespace.
+func (s *NoticeStore) ForAccount(sourceID, accountID string) *NoticeStore {
+	if s == nil {
+		return nil
+	}
+	return &NoticeStore{parent: s, sourceID: sourceID, accountID: accountID}
+}

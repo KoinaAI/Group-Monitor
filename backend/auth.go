@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // otpState holds the single in-flight login OTP. Authentication lives entirely
@@ -216,11 +218,13 @@ func (a *API) handleOtpVerify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"ok": false, "reason": fmt.Sprintf("验证码不正确，还可尝试 %d 次", left)})
 }
 
-// passwordAvailable reports whether break-glass password login is currently
-// allowed: a password must be configured AND OTP must be undeliverable (NapCat
-// offline or no masters). This keeps the strong factor (OTP) mandatory whenever
-// it can actually be used, and avoids the lockout hazard of no reachable master.
+// A persisted password is always usable, including when an information source
+// is online. NAP_PASSWORD retains its legacy emergency-only behavior for older
+// deployments which have not completed initialization yet.
 func (a *API) passwordAvailable() bool {
+	if a.store.Get().Security.PasswordHash != "" {
+		return true
+	}
 	if a.password == "" {
 		return false
 	}
@@ -232,16 +236,20 @@ func (a *API) passwordAvailable() bool {
 	return time.Now().Before(a.otp.unavailableUntil)
 }
 
-// handlePassword verifies the break-glass password (constant time) and issues a
-// session on success. It is only honoured when OTP is undeliverable, and is
-// throttled with a lockout so it can't be brute-forced.
+func (a *API) passwordConfigured() bool {
+	return a.store.Get().Security.PasswordHash != "" || a.password != ""
+}
+
+// handlePassword verifies the saved password (or legacy emergency password)
+// and issues a session, with a per-client lockout after repeated failures.
 func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeErr(w, 405, "method not allowed")
 		return
 	}
-	if a.password == "" {
-		writeErr(w, 403, "未配置应急密码")
+	hash := a.store.Get().Security.PasswordHash
+	if hash == "" && a.password == "" {
+		writeErr(w, 403, "未配置登录密码")
 		return
 	}
 	if !a.passwordAvailable() {
@@ -268,7 +276,13 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 429, fmt.Sprintf("尝试次数过多，请 %d 秒后再试", wait))
 		return
 	}
-	if subtle.ConstantTimeCompare([]byte(body.Password), []byte(a.password)) != 1 {
+	valid := false
+	if hash != "" {
+		valid = bcrypt.CompareHashAndPassword([]byte(hash), []byte(body.Password)) == nil
+	} else {
+		valid = subtle.ConstantTimeCompare([]byte(body.Password), []byte(a.password)) == 1
+	}
+	if !valid {
 		state.attempts++
 		left := pwMaxAttempts - state.attempts
 		if state.attempts >= pwMaxAttempts {
@@ -293,7 +307,7 @@ func (a *API) handlePassword(w http.ResponseWriter, r *http.Request) {
 	a.pw.attempts = 0
 	a.pw.mu.Unlock()
 
-	a.hub.Log("info", 0, "", "已通过应急密码登录")
+	a.hub.Log("info", 0, "", "已通过密码登录")
 	a.issueSession(w, r)
 }
 

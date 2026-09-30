@@ -13,6 +13,10 @@ import (
 // Config is the full persisted state of the notifier. It is written to disk as
 // JSON whenever the frontend saves changes, and loaded once on startup.
 type Config struct {
+	Security  SecurityConfig `json:"security"`
+	Sources   []SourceConfig `json:"sources"`
+	SourceID  string         `json:"-"`
+	AccountID string         `json:"-"`
 	// OneBot connection to the running NapCat instance.
 	OneBot OneBotConfig `json:"onebot"`
 	// LLM is the OpenAI-compatible endpoint used to format/filter messages.
@@ -153,9 +157,11 @@ type Rules struct {
 // ---- persistence ----
 
 type Store struct {
-	path string
-	mu   sync.RWMutex
-	cfg  Config
+	parent    *Store
+	accountID string
+	path      string
+	mu        sync.RWMutex
+	cfg       Config
 }
 
 const (
@@ -176,11 +182,7 @@ const (
 
 func defaultConfig() Config {
 	return Config{
-		OneBot: OneBotConfig{
-			HTTPBase: "http://172.17.0.2:3100",
-			WSURL:    "ws://172.17.0.2:3101",
-			Token:    "",
-		},
+		Sources: []SourceConfig{},
 		LLM: LLMConfig{
 			Enabled: false,
 			BaseURL: "http://127.0.0.1:3000/v1",
@@ -241,13 +243,29 @@ func NewStore(path string) (*Store, error) {
 	if err := json.Unmarshal(b, &s.cfg); err != nil {
 		return nil, err
 	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(b, &fields)
+	_, hasSources := fields["sources"]
+	if !hasSources && (s.cfg.OneBot.HTTPBase != "" || s.cfg.OneBot.WSURL != "") {
+		rules := cloneRules(s.cfg.Rules)
+		s.cfg.Sources = []SourceConfig{{ID: "legacy-napcat", Name: "NapCat", Kind: "napcat", Accounts: []SourceAccount{{ID: legacyAccountID, Name: "原有账号", Enabled: true, OneBot: s.cfg.OneBot, Groups: s.cfg.Groups, Masters: s.cfg.Masters, Rules: &rules}}}}
+		s.cfg.OneBot, s.cfg.Groups, s.cfg.Masters = OneBotConfig{}, []GroupWatch{}, []Master{}
+	}
 	if err := validateConfig(s.cfg); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+	if !hasSources {
+		if err := s.save(s.cfg); err != nil {
+			return nil, err
+		}
 	}
 	return s, nil
 }
 
 func (s *Store) Get() Config {
+	if s.parent != nil {
+		return accountConfig(s.parent.Get(), s.accountID)
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneConfig(s.cfg)
@@ -256,6 +274,9 @@ func (s *Store) Get() Config {
 // Update persists a private copy before publishing it to readers. A failed
 // write must leave the in-memory configuration consistent with the file.
 func (s *Store) Update(fn func(*Config)) (Config, error) {
+	if s.parent != nil {
+		return s.updateAccount(fn)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := cloneConfig(s.cfg)
@@ -271,6 +292,7 @@ func (s *Store) Update(fn func(*Config)) (Config, error) {
 }
 
 func cloneConfig(c Config) Config {
+	c.Sources = cloneSources(c.Sources)
 	c.Masters = slices.Clone(c.Masters)
 	c.Groups = slices.Clone(c.Groups)
 	c.Rules.UrgentKeywords = slices.Clone(c.Rules.UrgentKeywords)
@@ -333,6 +355,12 @@ func validText(s string, max int) bool {
 // Zero values that historically meant "use the default" are normalized by the
 // API handlers before Update; persisted values themselves must stay bounded.
 func validateConfig(c Config) error {
+	if err := validateSecurityConfig(c.Security); err != nil {
+		return err
+	}
+	if err := validateSources(c); err != nil {
+		return err
+	}
 	if !validURL(c.OneBot.HTTPBase, "http", "https") || !validURL(c.OneBot.WSURL, "ws", "wss") {
 		return fmt.Errorf("invalid OneBot URL")
 	}

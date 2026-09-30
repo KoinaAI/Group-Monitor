@@ -169,8 +169,9 @@ func (a *API) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{
 		"authed":             a.authed(r),
 		"otpAvailable":       online && masters > 0,
-		"passwordConfigured": a.password != "",
+		"passwordConfigured": a.passwordConfigured(),
 		"passwordAvailable":  a.passwordAvailable(),
+		"setupRequired":      a.setupRequired(),
 		"onebotConnected":    online,
 		"masters":            masters,
 	})

@@ -58,6 +58,8 @@ type OneBot struct {
 
 // GroupMessage is the normalised form of an OneBot group message event.
 type GroupMessage struct {
+	SourceID       string        `json:"sourceId,omitempty"`
+	AccountID      string        `json:"accountId,omitempty"`
 	Time           int64         `json:"time"`
 	GroupID        int64         `json:"groupId"`
 	GroupName      string        `json:"groupName"`
