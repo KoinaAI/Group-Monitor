@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Button, Input, TextField } from '@heroui/react'
+import { useMemo, useState } from 'react'
+import { Button, Chip, Input, ListBox, TextField } from '@heroui/react'
 import { ActionBar, ListView, Segment, Widget } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
@@ -17,6 +17,8 @@ type GroupFilter = 'all' | 'watched' | 'unwatched'
 export default function Groups() {
   const { data, error, loading, reload, setData } = useApi(api.groups.list, [])
   const [q, setQ] = useState('')
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(new Set())
+  const [searchOpen, setSearchOpen] = useState(false)
   const [filter, setFilter] = useState<GroupFilter>('all')
   const [changes, setChanges] = useState<Record<number, boolean>>({})
   const [saving, setSaving] = useState(false)
@@ -25,9 +27,18 @@ export default function Groups() {
   const dirtyCount = Object.keys(changes).length
   const watchedCount = rows.filter((row) => row.watch).length
   const search = q.trim().toLowerCase()
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedGroupIds.has(String(row.groupId))),
+    [rows, selectedGroupIds],
+  )
+  const suggestions = useMemo(() => {
+    if (!search) return rows
+    return rows.filter((row) => [row.groupName, row.groupRemark, String(row.groupId)].some((value) => value?.toLowerCase().includes(search)))
+  }, [rows, search])
   const filtered = rows.filter((row) => {
     const matchesSearch = !search || row.groupName?.toLowerCase().includes(search) || row.groupRemark?.toLowerCase().includes(search) || String(row.groupId).includes(search)
-    return matchesSearch && (filter === 'all' || (filter === 'watched' ? row.watch : !row.watch))
+    const matchesSelected = selectedGroupIds.size === 0 || selectedGroupIds.has(String(row.groupId))
+    return matchesSearch && matchesSelected && (filter === 'all' || (filter === 'watched' ? row.watch : !row.watch))
   })
 
   const setWatch = (groupId: number, value: boolean) => {
@@ -67,10 +78,59 @@ export default function Groups() {
             <Widget.Title>群组列表</Widget.Title>
             <Widget.Description className="tabular-nums">共 {rows.length} 个群 · 已监听 {watchedCount} 个</Widget.Description>
           </div>
-          <TextField aria-label="搜索群组" value={q} onChange={setQ} className="w-full sm:w-64">
-            <Input placeholder="搜索群名、备注或群号" variant="secondary" />
-          </TextField>
+          <div className="relative w-full sm:w-80">
+            <TextField
+              aria-label="搜索群组"
+              value={q}
+              onChange={(value) => { setQ(value); setSearchOpen(true) }}
+              onFocus={() => setSearchOpen(true)}
+              onBlur={() => window.setTimeout(() => setSearchOpen(false), 120)}
+            >
+              <Input placeholder="输入群名或群号，可多选" variant="secondary" />
+            </TextField>
+            {searchOpen ? <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+              <ListBox aria-label="群组搜索结果" className="max-h-64 overflow-y-auto py-1">
+                {suggestions.length === 0 ? <ListBox.Item id="empty" isDisabled textValue="没有匹配的群组">没有匹配的群组</ListBox.Item> : suggestions.map((row) => {
+                  const selected = selectedGroupIds.has(String(row.groupId))
+                  return <ListBox.Item
+                    key={row.groupId}
+                    id={String(row.groupId)}
+                    textValue={`${row.groupName} ${row.groupRemark} ${row.groupId}`}
+                    aria-selected={selected}
+                    onPointerDown={(event) => event.preventDefault()}
+                    onAction={() => {
+                      setSelectedGroupIds((previous) => {
+                        const next = new Set(previous)
+                        if (selected) next.delete(String(row.groupId))
+                        else next.add(String(row.groupId))
+                        return next
+                      })
+                      setQ('')
+                    }}
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{row.groupName || `群 ${row.groupId}`}</span>
+                      <span className="block text-xs text-muted tabular-nums">群号 {row.groupId}{row.groupRemark ? ` · ${row.groupRemark}` : ''}</span>
+                    </span>
+                    {selected ? <AppIcon name="check" className="size-4 shrink-0 text-accent" /> : null}
+                  </ListBox.Item>
+                })}
+              </ListBox>
+            </div> : null}
+          </div>
         </Widget.Header>
+        {selectedRows.length > 0 ? <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-4 py-2">
+          <span className="mr-1 text-xs text-muted">已选群组</span>
+          {selectedRows.map((row) => <span key={row.groupId} className="inline-flex items-center gap-0.5">
+            <Chip size="sm" variant="soft" color="accent"><Chip.Label>{row.groupName || `群 ${row.groupId}`} · {row.groupId}</Chip.Label></Chip>
+            <Button size="sm" variant="ghost" isIconOnly aria-label={`移除 ${row.groupName || row.groupId}`} onPress={() => setSelectedGroupIds((previous) => {
+              const next = new Set(previous)
+              next.delete(String(row.groupId))
+              return next
+            })} className="size-5 min-w-5 p-0 text-muted"><AppIcon name="close" className="size-3" /></Button>
+          </span>)}
+          <Button size="sm" variant="ghost" onPress={() => setSelectedGroupIds(new Set())}>清除选择</Button>
+        </div> : null}
         <Widget.Content className="!p-0">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
             <Segment aria-label="群组监听筛选" size="sm" selectedKey={filter} onSelectionChange={(key) => setFilter(key as GroupFilter)}>

@@ -1,6 +1,7 @@
 import { Avatar, Button, Switch } from '@heroui/react'
 import { ListView } from '@heroui-pro/react'
 import { useNavigate } from 'react-router-dom'
+import { AppIcon } from '../../lib/icons'
 import { groupAvatar } from '../../lib/qlogo'
 import type { GroupRow } from '../../lib/types'
 
@@ -28,9 +29,11 @@ export function GroupRowItem({ row, watch, onWatch, isDisabled }: {
         </div>
         <ListView.Description className="block tabular-nums">{row.groupId} · {row.memberCount} 名成员</ListView.Description>
       </ListView.ItemContent>
-      <ListView.ItemAction className="flex items-center gap-3 sm:gap-5">
-        <span className="hidden text-xs text-muted md:inline">{watch ? '正在监听' : '未监听'}</span>
-        <Button size="sm" variant="ghost" onPress={openHistory}>历史</Button>
+      <ListView.ItemAction className="flex items-center gap-2 sm:gap-3">
+        <Button size="sm" variant="secondary" onPress={openHistory} className="gap-1.5">
+          <AppIcon name="clock" className="size-4" />
+          <span>历史记录</span>
+        </Button>
         <Switch isSelected={watch} onChange={onWatch} isDisabled={isDisabled} size="sm" aria-label="监听该群">
           <Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content>
         </Switch>
