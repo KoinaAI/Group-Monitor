@@ -14,8 +14,9 @@ const defaults: DocumentConfig = {
 }
 
 export function DocumentForm({ initial }: { initial: DocumentConfig }) {
-  const [config, setConfig] = useState<DocumentConfig>({ ...defaults, ...initial })
-  const [saved, setSaved] = useState(() => JSON.stringify({ ...defaults, ...initial }))
+  const initialConfig = { ...defaults, ...initial, mode: initial.mode ?? (initial.baseUrl?.includes('/api/v4') ? 'api' : defaults.mode) } as DocumentConfig
+  const [config, setConfig] = useState<DocumentConfig>(initialConfig)
+  const [saved, setSaved] = useState(() => JSON.stringify(initialConfig))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
