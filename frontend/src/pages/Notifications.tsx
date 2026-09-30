@@ -11,17 +11,22 @@ import { api } from '../lib/api'
 import { uid } from '../lib/id'
 import type { NotificationTarget, SourceConfig } from '../lib/types'
 
+// Keep the presentation-only draft field local until it is persisted by the
+// notifications endpoint. Older servers simply omit it when loading targets.
+type NotificationDraft = NotificationTarget & { note?: string }
+
 export default function Notifications() {
-  const [targets, setTargets] = useState<NotificationTarget[]>([])
+  const [targets, setTargets] = useState<NotificationDraft[]>([])
   const [saved, setSaved] = useState('[]')
   const [sources, setSources] = useState<SourceConfig[]>([])
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
   useEffect(() => {
     api.notifications.list()
-      .then((v) => { setTargets(v ?? []); setSaved(JSON.stringify(v ?? [])) })
+      .then((v) => { setTargets((v ?? []) as NotificationDraft[]); setSaved(JSON.stringify(v ?? [])) })
       .catch((e) => setError(e instanceof Error ? e.message : '通知目标加载失败'))
       .finally(() => setLoading(false))
     api.sources.list().then((v) => setSources(v ?? [])).catch((e) => setError(String(e)))
@@ -34,7 +39,7 @@ export default function Notifications() {
   }
   const save = async () => {
     setBusy(true); setError(''); setNote('')
-    try { const v = await api.notifications.save(targets); setTargets(v); setSaved(JSON.stringify(v)); setNote('通知目标已保存') }
+    try { const v = await api.notifications.save(targets); setTargets(v as NotificationDraft[]); setSaved(JSON.stringify(v)); setNote('通知目标已保存') }
     catch (e) { setError(e instanceof Error ? e.message : '保存失败') }
     finally { setBusy(false) }
   }
@@ -45,7 +50,9 @@ export default function Notifications() {
     finally { setBusy(false) }
   }
   const add = (kind: 'ntfy' | 'bark') => {
-    setTargets((current) => [...current, { id: uid(), name: kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送', kind, enabled: true, url: kind === 'ntfy' ? 'https://ntfy.sh' : 'https://api.day.app', minLevel: 1, group: '讯枢', accountIds: [] }])
+    const id = uid()
+    setTargets((current) => [...current, { id, name: kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送', kind, enabled: true, url: kind === 'ntfy' ? 'https://ntfy.sh' : 'https://api.day.app', minLevel: 1, group: '讯枢', accountIds: [], note: '' }])
+    setCollapsed((current) => ({ ...current, [id]: false }))
     setNote('')
   }
   return <Page>
@@ -71,8 +78,15 @@ export default function Notifications() {
         </EmptyState.Header>
       </EmptyState>
     ) : <div className="grid items-start gap-4 xl:grid-cols-2">
-      {targets.map((target) => <SectionCard key={target.id} title={target.name} description={target.kind === 'ntfy' ? 'ntfy · 主题广播' : 'Bark · 设备推送'} actions={<Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => { setTargets((current) => current.filter((item) => item.id !== target.id)); setNote('') }}>移除</Button>}>
-        <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4">
+      {targets.map((target) => {
+        const isCollapsed = collapsed[target.id] ?? false
+        return <SectionCard key={target.id} title={target.name || (target.kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送')} description={target.kind === 'ntfy' ? 'ntfy · 主题广播' : 'Bark · 设备推送'} actions={<>
+          <Button size="sm" variant="tertiary" aria-expanded={!isCollapsed} onPress={() => setCollapsed((current) => ({ ...current, [target.id]: !isCollapsed }))}>
+            {isCollapsed ? '展开' : '收起'}
+          </Button>
+          <Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => { setTargets((current) => current.filter((item) => item.id !== target.id)); setCollapsed((current) => { const next = { ...current }; delete next[target.id]; return next }); setNote('') }}>移除</Button>
+        </>}>
+        {isCollapsed ? <p className="truncate text-xs text-muted">{target.note?.trim() || '配置已收起，点击展开查看详情。'}</p> : <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4">
           <Toggle label="启用通知目标" isSelected={target.enabled} onChange={(enabled) => change(target.id, { enabled })} isDisabled={busy} size="sm" />
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <TextSetting label="名称" value={target.name} onChange={(name) => change(target.id, { name })} />
@@ -84,6 +98,7 @@ export default function Notifications() {
               <TextSetting label="设备 Key" type="password" value={target.deviceKey ?? ''} onChange={(deviceKey) => change(target.id, { deviceKey })} description="留空保留原值，保存后隐藏。" />
               <TextSetting label="通知分组" value={target.group ?? ''} onChange={(group) => change(target.id, { group })} />
             </>}
+            <TextSetting className="sm:col-span-2" label="备注" value={target.note ?? ''} onChange={(note) => change(target.id, { note } as Partial<NotificationDraft>)} placeholder="例如：值班手机、备用通道" description="仅用于识别通知目标，不会发送给接收者。" />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <label htmlFor={`level-${target.id}`} className="text-sm font-medium">最低通知等级</label>
@@ -108,8 +123,9 @@ export default function Notifications() {
             <span className="text-xs text-muted">{dirty ? '保存更改后可发送测试' : '测试将发送到当前目标'}</span>
             <Button size="sm" variant="secondary" isDisabled={busy || !target.enabled || dirty} onPress={() => test(target.id)}>发送测试通知</Button>
           </div>
-        </fieldset>
-      </SectionCard>)}
+        </fieldset>}
+      </SectionCard>
+      })}
     </div>}
   </Page>
 }
