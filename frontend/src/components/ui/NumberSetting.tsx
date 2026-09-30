@@ -31,7 +31,7 @@ export function NumberSetting({
   return (
     <NumberField
       variant="secondary"
-      className={cn('flex flex-col gap-1.5', className)}
+      className={cn('flex min-w-0 flex-col gap-1.5', className)}
       value={value}
       onChange={(v) => onChange(typeof v === 'number' && Number.isFinite(v) ? v : 0)}
       minValue={minValue}
@@ -41,7 +41,7 @@ export function NumberSetting({
       isDisabled={isDisabled}
     >
       <Label>{label}</Label>
-      <NumberField.Group>
+      <NumberField.Group className="w-full min-w-28 max-w-56">
         <NumberField.DecrementButton />
         <NumberField.Input />
         <NumberField.IncrementButton />

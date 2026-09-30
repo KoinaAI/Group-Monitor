@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Description, Label, Switch } from '@heroui/react'
+import { Description, Switch } from '@heroui/react'
 
 // Labeled toggle built on the confirmed HeroUI v3 Switch anatomy
 // (Switch.Content > Switch.Control > Switch.Thumb, label/description after the
@@ -21,15 +21,13 @@ export function Toggle({
 }) {
   return (
     <Switch isSelected={isSelected} onChange={onChange} isDisabled={isDisabled} size={size}>
-      <Switch.Content>
-        <Switch.Control>
-          <Switch.Thumb />
-        </Switch.Control>
+      <Switch.Content className="w-full justify-between gap-3">
         <div className="flex flex-col gap-0.5">
-          <Label>{label}</Label>
-          {description ? <Description>{description}</Description> : null}
+          <span className="text-sm font-medium text-foreground">{label}</span>
         </div>
+        <Switch.Control><Switch.Thumb /></Switch.Control>
       </Switch.Content>
+      {description ? <Description className="max-w-prose text-xs">{description}</Description> : null}
     </Switch>
   )
 }

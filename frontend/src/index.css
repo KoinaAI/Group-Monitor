@@ -32,3 +32,17 @@ body {
   scrollbar-width: thin;
   scrollbar-color: color-mix(in oklch, currentColor 18%, transparent) transparent;
 }
+
+/* Compact workspace: native Pro surfaces and a single content scroll area. */
+.workspace-shell {
+  --sidebar-width: 216px;
+  --navbar-height: 56px;
+}
+.workspace-page { overflow-wrap: anywhere; }
+.workspace-page .card { align-self: start; }
+.workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { font-weight: 600; }
+.workspace-shell .app-layout__toolbar { position: relative; top: auto; }
+.workspace-shell .app-layout__main { scroll-padding-top: 1.5rem; }
+@media (max-width: 640px) {
+  .workspace-page .segment { max-width: 100%; flex-wrap: wrap; }
+}

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Button } from '@heroui/react'
+import { EmptyState as ProEmptyState } from '@heroui-pro/react'
 import { AppIcon, type IconName } from '../../lib/icons'
 import { cn } from '../../lib/cn'
 
@@ -18,19 +19,14 @@ export function EmptyState({
   className?: string
 }) {
   return (
-    <div
-      className={cn(
-        'flex flex-col items-center justify-center gap-2 px-6 py-12 text-center',
-        className,
-      )}
-    >
-      <div className="grid size-11 place-items-center rounded-full bg-default text-muted">
-        <AppIcon name={icon} className="size-5" />
-      </div>
-      <p className="text-sm font-medium text-foreground">{title}</p>
-      {description ? <p className="max-w-sm text-xs text-muted">{description}</p> : null}
-      {action ? <div className="mt-1">{action}</div> : null}
-    </div>
+    <ProEmptyState size="sm" className={cn('px-4 py-6', className)}>
+      <ProEmptyState.Header>
+        <ProEmptyState.Media variant="icon"><AppIcon name={icon} className="size-5 text-muted" /></ProEmptyState.Media>
+        <ProEmptyState.Title className="text-sm">{title}</ProEmptyState.Title>
+        {description ? <ProEmptyState.Description className="max-w-sm text-xs">{description}</ProEmptyState.Description> : null}
+      </ProEmptyState.Header>
+      {action ? <ProEmptyState.Content>{action}</ProEmptyState.Content> : null}
+    </ProEmptyState>
   )
 }
 
@@ -47,7 +43,7 @@ export function InlineError({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center gap-3 px-6 py-10 text-center',
+        'flex flex-col items-center justify-center gap-3 px-4 py-6 text-center',
         className,
       )}
     >

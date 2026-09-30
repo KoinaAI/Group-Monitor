@@ -32,7 +32,7 @@ export function TextSetting({
       type={type}
       inputMode={inputMode}
       isDisabled={isDisabled}
-      className={cn('flex flex-col gap-1.5', className)}
+      className={cn('flex min-w-0 flex-col gap-1.5', className)}
     >
       <Label>{label}</Label>
       <Input variant="secondary" placeholder={placeholder} />
