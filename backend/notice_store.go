@@ -45,6 +45,7 @@ type NoticeQuery struct {
 	AccountID     string
 	IncludeLegacy bool
 	GroupID       int64
+	GroupIDs      []int64
 	Query         string
 	Limit         int
 	Before        int64  // createdAt cursor; zero means newest
@@ -339,6 +340,9 @@ func (s *NoticeStore) QueryContext(ctx context.Context, q NoticeQuery) ([]Notice
 			if q.GroupID != 0 && n.GroupID != q.GroupID {
 				continue
 			}
+			if len(q.GroupIDs) > 0 && !containsNoticeGroup(q.GroupIDs, n.GroupID) {
+				continue
+			}
 			if q.AccountID != "" && n.AccountID != q.AccountID && !(q.IncludeLegacy && n.AccountID == "") {
 				continue
 			}
@@ -367,6 +371,15 @@ func (s *NoticeStore) QueryContext(ctx context.Context, q NoticeQuery) ([]Notice
 		}
 	}
 	return out, nil
+}
+
+func containsNoticeGroup(groups []int64, groupID int64) bool {
+	for _, id := range groups {
+		if id == groupID {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *NoticeStore) Close() error { return nil }

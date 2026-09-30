@@ -113,3 +113,22 @@ func TestNoticeStoreIgnoresTruncatedLine(t *testing.T) {
 		t.Fatalf("rows=%+v err=%v", rows, err)
 	}
 }
+
+func TestNoticeStoreQueryMultipleGroups(t *testing.T) {
+	store, err := NewNoticeStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, groupID := range []int64{42, 43, 44} {
+		if _, err := store.Append(NoticeRecord{GroupID: groupID, Group: fmt.Sprintf("群 %d", groupID), Result: LLMResult{Title: fmt.Sprintf("通知 %d", groupID)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := store.Query(NoticeQuery{GroupIDs: []int64{42, 44}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].GroupID == 43 || rows[1].GroupID == 43 {
+		t.Fatalf("multiple group query returned %#v", rows)
+	}
+}

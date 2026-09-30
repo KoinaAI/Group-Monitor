@@ -823,7 +823,16 @@ func (a *API) handleNotices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var q NoticeQuery
-	q.GroupID, _ = strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("groupId")), 10, 64)
+	for _, raw := range r.URL.Query()["groupId"] {
+		id, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err == nil && id > 0 && !containsNoticeGroup(q.GroupIDs, id) {
+			q.GroupIDs = append(q.GroupIDs, id)
+		}
+	}
+	if len(q.GroupIDs) == 1 {
+		q.GroupID = q.GroupIDs[0]
+		q.GroupIDs = nil
+	}
 	q.Query = strings.TrimSpace(r.URL.Query().Get("q"))
 	q.Limit, _ = strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 	q.Before, _ = strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("before")), 10, 64)

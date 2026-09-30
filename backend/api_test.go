@@ -142,6 +142,32 @@ func TestAPIStatusLogsAndEscalations(t *testing.T) {
 	}
 }
 
+func TestAPINoticesAcceptMultipleGroupFilters(t *testing.T) {
+	a := newTestAPI(t)
+	cookie := sessionCookieFor(t, a)
+	notices, err := NewNoticeStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, groupID := range []int64{42, 43, 44} {
+		if _, err := notices.Append(NoticeRecord{GroupID: groupID, Group: fmt.Sprintf("群 %d", groupID), Result: LLMResult{Title: fmt.Sprintf("通知 %d", groupID)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.SetNoticeStore(notices)
+	w := serveAPI(a, "GET", "/api/notices?groupId=42&groupId=44", nil, cookie)
+	if w.Code != http.StatusOK {
+		t.Fatalf("notices status=%d body=%s", w.Code, w.Body.String())
+	}
+	var rows []NoticeRecord
+	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].GroupID == 43 || rows[1].GroupID == 43 {
+		t.Fatalf("multiple group filters returned %#v", rows)
+	}
+}
+
 func TestAPISSEHelloAndLiveEvent(t *testing.T) {
 	a := newTestAPI(t)
 	cookie := sessionCookieFor(t, a)
