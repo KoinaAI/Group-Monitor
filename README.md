@@ -133,12 +133,17 @@ const sources = await client.callTool({ name: 'list_sources', arguments: {} })
 
 ### 配套 API Skill
 
-仓库附带 [xunshu-api Skill](skills/xunshu-api/SKILL.md)，使用 Python 3 标准库直接访问 Bearer API，无需 MCP SDK。将整个 `skills/xunshu-api` 目录复制到 Agent 的 Skill 目录；Codex 默认位置为 `~/.codex/skills/xunshu-api`。在 Agent 的执行环境设置 `XUNSHU_URL` 和 `XUNSHU_API_KEY`，不要把真实密钥写进仓库或 Skill。
+打开控制台「Agent 接入」→「安装 Skill」，选择 Codex 或 Claude Code，复制安装命令并在运行 Agent 的电脑上执行（需要 Python 3 和 curl）。安装完成后重新打开 Agent。也可直接下载完整 ZIP，解压后将 `xunshu-api` 文件夹放入其他 Agent 的 Skill 目录。
+
+Skill 随前端静态资源部署，源文件位于 [frontend/public/skills/xunshu-api](frontend/public/skills/xunshu-api/SKILL.md)。每次开发启动和构建都会生成 `/skills/xunshu-api.zip` 与 `/skills/install.py`，Docker 镜像中同样可用，不依赖 GitHub 下载。安装器拒绝覆盖已有目录；更新时先将原 Skill 文件夹改名备份，再执行安装命令。
+
+Codex 默认安装到 `~/.codex/skills/xunshu-api`（支持 `CODEX_HOME`），Claude Code 安装到 `~/.claude/skills/xunshu-api`。安装文件不含实例密钥；在 Agent 的执行环境设置 `XUNSHU_URL` 和 `XUNSHU_API_KEY`，然后使用 Skill 中的 Python 标准库客户端，无需 MCP SDK。不要把真实密钥写进仓库或 Skill。
 
 ```bash
-python3 skills/xunshu-api/scripts/query.py tools
-python3 skills/xunshu-api/scripts/query.py query list_sources
-python3 skills/xunshu-api/scripts/query.py query recent_notices '{"account_id":"school","limit":5}'
+# 在已安装的 xunshu-api 目录下执行
+python3 scripts/query.py tools
+python3 scripts/query.py query list_sources
+python3 scripts/query.py query recent_notices '{"account_id":"school","limit":5}'
 ```
 
 Skill 包含工具选择、查询范围、游标分页、来源引用及不可信消息处理说明。客户端拒绝重定向，限制响应大小，并且不会打印密钥。

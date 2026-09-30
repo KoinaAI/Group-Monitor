@@ -6,6 +6,7 @@ import { SectionCard } from '../components/ui/SectionCard'
 import { TextSetting } from '../components/ui/TextSetting'
 import { api } from '../lib/api'
 import type { AgentKey, SourceConfig } from '../lib/types'
+import { SkillInstall } from './agents/SkillInstall'
 
 export default function AgentAccess() {
   const [keys, setKeys] = useState<AgentKey[]>([])
@@ -36,6 +37,7 @@ export default function AgentAccess() {
     <PageHeader title="Agent 接入" description="让第三方 Agent 检索正式通知、近期消息及原文上下文。所有工具均为只读。" />
     {error && <p role="alert" className="mb-4 text-sm text-danger">{error}</p>}
     <div className="flex flex-col gap-6">
+      <SkillInstall />
       <SectionCard title="接入地址" description="MCP 与直接 API 共用同一 API Key，均通过 Authorization: Bearer 鉴权。">
         <dl className="flex flex-col gap-3 text-sm"><div><dt className="text-muted">MCP · Streamable HTTP</dt><dd className="break-all">{location.origin}/api/mcp</dd></div><div><dt className="text-muted">直接 API · 工具目录</dt><dd className="break-all">{location.origin}/api/agent/v1/tools</dd></div><div><dt className="text-muted">直接 API · 查询</dt><dd className="break-all">{location.origin}/api/agent/v1/query</dd></div></dl>
       </SectionCard>
