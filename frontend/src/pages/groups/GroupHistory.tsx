@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Avatar, Button, Modal, Spinner } from '@heroui/react'
+import { Widget } from '@heroui-pro/react'
 import { Page } from '../../components/Page'
-import { SectionCard } from '../../components/ui/SectionCard'
 import { EmptyState, InlineError } from '../../components/ui/States'
 import { Loader } from '../../components/Loader'
 import { IntentChip } from '../../components/ui/IntentChip'
@@ -350,7 +350,7 @@ function FileCard({ groupId, file }: { groupId: number; file: HistoryFile }) {
     <a
       href={href}
       download={file.name}
-      className="group flex w-56 max-w-full items-start gap-2.5 rounded-xl border border-border bg-surface p-3 shadow-sm transition-colors hover:bg-muted/40"
+      className="group flex w-64 max-w-full items-start gap-2.5 rounded-xl bg-surface-secondary p-3 hover:bg-default"
     >
       <span
         className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-lg"
@@ -407,7 +407,7 @@ function HistoryItem({ groupId, m, prev }: { groupId: number; m: HistoryMsg; pre
           <Avatar.Fallback>{(m.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
         </Avatar>
       )}
-      <div className={`flex min-w-0 max-w-[78%] flex-col ${self ? 'items-end' : 'items-start'}`}>
+      <div className={`flex min-w-0 max-w-[84%] flex-col sm:max-w-[76%] ${self ? 'items-end' : 'items-start'}`}>
         {grouped ? null : (
           <div className={`mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 ${self ? 'flex-row-reverse' : ''}`}>
             <span className="text-xs font-medium text-muted">{m.nickname || m.userId}</span>
@@ -421,7 +421,7 @@ function HistoryItem({ groupId, m, prev }: { groupId: number; m: HistoryMsg; pre
           <MessageBody m={m} />
         ) : (
           <div
-            className={`w-fit rounded-2xl px-3 py-1.5 ${self ? 'rounded-tr-md bg-accent-soft' : 'rounded-tl-md bg-surface shadow-sm'}`}
+            className={`w-fit rounded-2xl px-3 py-1.5 ${self ? 'rounded-tr-md bg-accent-soft' : 'rounded-tl-md bg-surface-secondary'}`}
           >
             <MessageBody m={m} />
           </div>
@@ -573,26 +573,37 @@ export default function GroupHistory() {
   const title = state?.groupName || String(gid)
 
   return (
-    <Page>
-      <div className="mb-6 flex items-center gap-3">
-        <Button variant="tertiary" size="sm" onPress={() => navigate('/groups')} aria-label="返回群组">
-          <AppIcon name="back" className="size-4" />
-          返回
-        </Button>
-        <Avatar size="md" className="shrink-0">
-          <Avatar.Image src={groupAvatar(gid)} alt={title} loading="lazy" />
-          <Avatar.Fallback>{title.slice(0, 1)}</Avatar.Fallback>
-        </Avatar>
-        <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold tracking-tight text-foreground">{title}</h1>
-          <p className="text-xs text-muted tabular-nums">
-            群号 {gid}
-            {state?.memberCount ? ` · ${state.memberCount} 名成员` : ''}
-          </p>
+    <Page className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar size="md" className="shrink-0">
+            <Avatar.Image src={groupAvatar(gid)} alt={title} loading="lazy" />
+            <Avatar.Fallback>{title.slice(0, 1)}</Avatar.Fallback>
+          </Avatar>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+            <p className="mt-0.5 text-xs text-muted tabular-nums">
+              群号 {gid}
+              {state?.memberCount ? ` · ${state.memberCount} 名成员` : ''}
+              {state?.groupRemark ? ` · ${state.groupRemark}` : ''}
+            </p>
+          </div>
         </div>
+        <Button variant="ghost" size="sm" onPress={() => navigate('/groups')}>
+          <AppIcon name="back" className="size-4" />
+          返回群组
+        </Button>
       </div>
 
-      <SectionCard title="消息记录" description={`已加载 ${msgs.length} 条`}>
+      <Widget>
+        <Widget.Header className="py-1">
+          <div className="flex items-center gap-3">
+            <Widget.Title>消息记录</Widget.Title>
+            <Widget.Description className="tabular-nums">已加载 {msgs.length} 条</Widget.Description>
+          </div>
+          <Button size="sm" variant="ghost" isDisabled={phase !== 'ready' || msgs.length === 0} onPress={() => { const el = scrollRef.current; if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' }) }}>回到最新</Button>
+        </Widget.Header>
+        <Widget.Content className="p-0">
         {phase === 'init' ? (
           <Loader label="正在加载聊天记录…" />
         ) : phase === 'error' ? (
@@ -602,9 +613,11 @@ export default function GroupHistory() {
         ) : (
           <div
             ref={scrollRef}
-            className="max-h-[68vh] overflow-y-auto rounded-xl bg-background p-3 sm:px-4"
+            aria-label="群聊历史消息"
+            tabIndex={0}
+            className="h-[calc(100dvh-15rem)] min-h-64 max-h-[52rem] overflow-y-auto overscroll-contain px-3 pb-4 sm:px-5"
           >
-            <div ref={topRef} className="flex justify-center py-3">
+            <div ref={topRef} className="flex justify-center py-4">
               {loadingMore ? (
                 <Spinner size="sm" color="accent" />
               ) : hasMore ? (
@@ -620,11 +633,14 @@ export default function GroupHistory() {
             </ul>
           </div>
         )}
-      </SectionCard>
+        </Widget.Content>
+        <Widget.Footer className="justify-between gap-2 pt-1 pb-2 text-xs text-muted">
+          <span>向上滚动查看更早记录</span>
+          <span>支持图片、语音与文件</span>
+        </Widget.Footer>
+      </Widget>
     </Page>
   )
 }
-
-
 
 
