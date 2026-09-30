@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Button } from '@heroui/react'
+import { Button, Checkbox } from '@heroui/react'
+import { EmptyState, NativeSelect } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
 import { SectionCard } from '../components/ui/SectionCard'
 import { TextSetting } from '../components/ui/TextSetting'
-import { NumberSetting } from '../components/ui/NumberSetting'
 import { Toggle } from '../components/ui/Toggle'
+import { IntentChip } from '../components/ui/IntentChip'
 import { api } from '../lib/api'
 import { uid } from '../lib/id'
 import type { NotificationTarget, SourceConfig } from '../lib/types'
@@ -17,11 +18,20 @@ export default function Notifications() {
   const [error, setError] = useState('')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [loading, setLoading] = useState(true)
   useEffect(() => {
-    api.notifications.list().then((v) => { setTargets(v ?? []); setSaved(JSON.stringify(v ?? [])) }).catch((e) => setError(String(e)))
-    api.sources.list().then(setSources).catch((e) => setError(String(e)))
+    api.notifications.list()
+      .then((v) => { setTargets(v ?? []); setSaved(JSON.stringify(v ?? [])) })
+      .catch((e) => setError(e instanceof Error ? e.message : '通知目标加载失败'))
+      .finally(() => setLoading(false))
+    api.sources.list().then((v) => setSources(v ?? [])).catch((e) => setError(String(e)))
   }, [])
-  const change = (id: string, patch: Partial<NotificationTarget>) => setTargets(targets.map((t) => t.id === id ? { ...t, ...patch } : t))
+  const dirty = JSON.stringify(targets) !== saved
+  const accounts = sources.flatMap((source) => source.accounts.map((account) => ({ ...account, sourceName: source.name })))
+  const change = (id: string, patch: Partial<NotificationTarget>) => {
+    setTargets((current) => current.map((target) => target.id === id ? { ...target, ...patch } : target))
+    setNote('')
+  }
   const save = async () => {
     setBusy(true); setError(''); setNote('')
     try { const v = await api.notifications.save(targets); setTargets(v); setSaved(JSON.stringify(v)); setNote('通知目标已保存') }
@@ -34,33 +44,71 @@ export default function Notifications() {
     catch (e) { setError(e instanceof Error ? e.message : '发送失败') }
     finally { setBusy(false) }
   }
-  const add = (kind: 'ntfy' | 'bark') => setTargets([...targets, { id: uid(), name: kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送', kind, enabled: true, url: kind === 'ntfy' ? 'https://ntfy.sh' : 'https://api.day.app', minLevel: 1, group: '讯枢', accountIds: [] }])
+  const add = (kind: 'ntfy' | 'bark') => {
+    setTargets((current) => [...current, { id: uid(), name: kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送', kind, enabled: true, url: kind === 'ntfy' ? 'https://ntfy.sh' : 'https://api.day.app', minLevel: 1, group: '讯枢', accountIds: [] }])
+    setNote('')
+  }
   return <Page>
-    <PageHeader title="广播通知" description="通过 ntfy 主题或 Bark 设备推送正式提醒。" actions={<Button isPending={busy} onPress={save}>保存通知目标</Button>} />
+    <PageHeader title="广播通知" description="配置主题与设备推送，按账号和通知等级分发。" actions={<Button size="sm" isPending={busy} isDisabled={loading || !dirty} onPress={save}>保存通知目标</Button>} />
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-sm text-muted">
+        <span className="tabular-nums">{targets.length} 个目标</span>
+        <IntentChip intent="success">{targets.filter((target) => target.enabled).length} 个启用</IntentChip>
+        {dirty && <span className="text-xs">有未保存的更改</span>}
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" variant="secondary" isDisabled={loading || busy} onPress={() => add('ntfy')}>添加 ntfy</Button>
+        <Button size="sm" variant="secondary" isDisabled={loading || busy} onPress={() => add('bark')}>添加 Bark</Button>
+      </div>
+    </div>
     {error && <p role="alert" className="mb-4 text-sm text-danger">{error}</p>}
     {note && <p role="status" className="mb-4 text-sm text-success">{note}</p>}
-    <div className="flex flex-col gap-6">
-      {targets.length === 0 && <p className="text-sm text-muted">添加通知目标后，即使没有 QQ 主人，也可接收群通知。</p>}
-      {targets.map((target) => <SectionCard key={target.id} title={target.name} description={target.kind === 'ntfy' ? '主题广播 · 支持自托管服务器' : '设备推送 · 支持自托管服务器'} actions={<Button variant="danger-soft" onPress={() => setTargets(targets.filter((t) => t.id !== target.id))}>移除</Button>}>
-        <div className="flex flex-col gap-4">
-          <Toggle label="启用通知目标" isSelected={target.enabled} onChange={(enabled) => change(target.id, { enabled })} />
-          <TextSetting label="名称" value={target.name} onChange={(name) => change(target.id, { name })} />
-          <TextSetting label="服务器地址" value={target.url} onChange={(url) => change(target.id, { url })} />
-          {target.kind === 'ntfy' ? <>
-            <TextSetting label="主题" value={target.topic ?? ''} onChange={(topic) => change(target.id, { topic })} />
-            <TextSetting label="访问令牌（可选）" type="password" value={target.token ?? ''} onChange={(token) => change(target.id, { token })} description="保存后不回显；留空保留原值。" />
-          </> : <>
-            <TextSetting label="设备 Key" type="password" value={target.deviceKey ?? ''} onChange={(deviceKey) => change(target.id, { deviceKey })} description="保存后不回显；留空保留原值。" />
-            <TextSetting label="通知分组" value={target.group ?? ''} onChange={(group) => change(target.id, { group })} />
-          </>}
-          <NumberSetting label="最低通知等级" description="1 一般 · 2 重要 · 3 紧急" value={target.minLevel} onChange={(minLevel) => change(target.id, { minLevel })} minValue={1} maxValue={3} />
-          <fieldset><legend className="mb-2 text-sm">适用账号（不选择时接收所有账号）</legend><div className="flex flex-wrap gap-4">
-            {sources.flatMap((s) => s.accounts.map((a) => <label key={a.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={target.accountIds?.includes(a.id) ?? false} onChange={(e) => change(target.id, { accountIds: e.target.checked ? [...(target.accountIds ?? []), a.id] : target.accountIds?.filter((id) => id !== a.id) })} />{s.name} / {a.name}</label>))}
-          </div></fieldset>
-          <Button className="self-start" variant="secondary" isDisabled={busy || !target.enabled || JSON.stringify(targets) !== saved} onPress={() => test(target.id)}>发送测试通知</Button>
-        </div>
+    {loading ? <p role="status" className="py-6 text-sm text-muted">正在加载通知目标…</p> : targets.length === 0 ? (
+      <EmptyState className="py-10">
+        <EmptyState.Header>
+          <EmptyState.Title>还没有通知目标</EmptyState.Title>
+          <EmptyState.Description>添加 ntfy 主题或 Bark 设备，即可在手机上接收群通知。</EmptyState.Description>
+        </EmptyState.Header>
+      </EmptyState>
+    ) : <div className="grid items-start gap-4 xl:grid-cols-2">
+      {targets.map((target) => <SectionCard key={target.id} title={target.name} description={target.kind === 'ntfy' ? 'ntfy · 主题广播' : 'Bark · 设备推送'} actions={<Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => { setTargets((current) => current.filter((item) => item.id !== target.id)); setNote('') }}>移除</Button>}>
+        <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4">
+          <Toggle label="启用通知目标" isSelected={target.enabled} onChange={(enabled) => change(target.id, { enabled })} isDisabled={busy} size="sm" />
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+            <TextSetting label="名称" value={target.name} onChange={(name) => change(target.id, { name })} />
+            <TextSetting label="服务器地址" type="url" value={target.url} onChange={(url) => change(target.id, { url })} />
+            {target.kind === 'ntfy' ? <>
+              <TextSetting label="主题" value={target.topic ?? ''} onChange={(topic) => change(target.id, { topic })} placeholder="school-notices" />
+              <TextSetting label="访问令牌（可选）" type="password" value={target.token ?? ''} onChange={(token) => change(target.id, { token })} description="留空保留原值，保存后隐藏。" />
+            </> : <>
+              <TextSetting label="设备 Key" type="password" value={target.deviceKey ?? ''} onChange={(deviceKey) => change(target.id, { deviceKey })} description="留空保留原值，保存后隐藏。" />
+              <TextSetting label="通知分组" value={target.group ?? ''} onChange={(group) => change(target.id, { group })} />
+            </>}
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label htmlFor={`level-${target.id}`} className="text-sm font-medium">最低通知等级</label>
+            <NativeSelect variant="secondary" className="w-44">
+              <NativeSelect.Trigger id={`level-${target.id}`} value={target.minLevel} onChange={(event) => change(target.id, { minLevel: Number(event.target.value) })}>
+                <NativeSelect.Option value={1}>1 · 一般及以上</NativeSelect.Option>
+                <NativeSelect.Option value={2}>2 · 重要及以上</NativeSelect.Option>
+                <NativeSelect.Option value={3}>3 · 仅紧急</NativeSelect.Option>
+              </NativeSelect.Trigger>
+            </NativeSelect>
+          </div>
+          <fieldset className="min-w-0">
+            <legend className="mb-2 text-xs text-muted">适用账号（不选择时接收所有账号）</legend>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {accounts.length ? accounts.map((account) => <Checkbox key={account.id} isSelected={target.accountIds?.includes(account.id) ?? false} onChange={(checked) => change(target.id, { accountIds: checked ? [...(target.accountIds ?? []), account.id] : target.accountIds?.filter((id) => id !== account.id) })} isDisabled={busy}>
+                <Checkbox.Content className="text-sm"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>{account.sourceName} / {account.name}</Checkbox.Content>
+              </Checkbox>) : <span className="text-xs text-muted">所有账号</span>}
+            </div>
+          </fieldset>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted">{dirty ? '保存更改后可发送测试' : '测试将发送到当前目标'}</span>
+            <Button size="sm" variant="secondary" isDisabled={busy || !target.enabled || dirty} onPress={() => test(target.id)}>发送测试通知</Button>
+          </div>
+        </fieldset>
       </SectionCard>)}
-      <div className="flex gap-3"><Button variant="secondary" onPress={() => add('ntfy')}>添加 ntfy</Button><Button variant="secondary" onPress={() => add('bark')}>添加 Bark</Button></div>
-    </div>
+    </div>}
   </Page>
 }
