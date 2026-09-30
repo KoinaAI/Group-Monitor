@@ -1,6 +1,17 @@
 import type { SourceAccount } from './types'
 const key = 'xunshu-account'
-export function activeAccount() { return localStorage.getItem(key) ?? '' }
+let pageAccount = localStorage.getItem(key) ?? ''
+// Archive links use full navigation so every request and media URL starts in
+// the destination account, including when the link is opened in a new tab.
+export function initializeAccountFromURL() {
+  if (!/^\/groups\/\d+\/history$/.test(window.location.pathname)) return
+  const id = new URLSearchParams(window.location.search).get('accountId')
+  if (id && /^[A-Za-z0-9_-]{1,64}$/.test(id)) {
+    pageAccount = id
+    localStorage.setItem(key, id)
+  }
+}
+export function activeAccount() { return pageAccount }
 export function selectAccount(id: string) {
   if (id) localStorage.setItem(key, id)
   else localStorage.removeItem(key)

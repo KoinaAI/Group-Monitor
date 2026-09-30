@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react'
-import { Link } from 'react-router-dom'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
 import { SectionCard } from '../components/ui/SectionCard'
@@ -11,7 +10,7 @@ import { Loader } from '../components/Loader'
 import { api, ApiError } from '../lib/api'
 import { urgencyIntent, urgencyLabel } from '../lib/labels'
 import { fmtDateTime } from '../lib/time'
-import type { NoticeRecord } from '../lib/types'
+import type { NoticeRecord, SourceConfig } from '../lib/types'
 
 const PAGE_SIZE = 30
 
@@ -22,6 +21,7 @@ export default function Notices() {
   const [loading, setLoading] = useState(true)
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState('')
+  const [sources, setSources] = useState<SourceConfig[]>([])
   const requestId = useRef(0)
   const applied = useRef({ q: '', groupId: 0 })
 
@@ -53,6 +53,7 @@ export default function Notices() {
 
   useEffect(() => {
     let canceled = false
+    api.sources.list().then((value) => { if (!canceled) setSources(value) }).catch(() => {})
     const id = ++requestId.current
     api.notices({ limit: PAGE_SIZE }).then((result) => {
       if (canceled || id !== requestId.current) return
@@ -81,7 +82,7 @@ export default function Notices() {
         <EmptyState icon="fileText" title="暂无通知" description="正式通知通过判断后会在这里保留；也可以换个关键词搜索。" />
       ) : (
         <div className="flex flex-col gap-4">
-          {rows.map((notice) => <NoticeCard key={notice.id} notice={notice} />)}
+          {rows.map((notice) => <NoticeCard key={notice.id} notice={notice} sources={sources} />)}
           {hasMore ? <div className="flex justify-center"><Button variant="secondary" onPress={() => { void load(true) }} isPending={loading}>加载更早的通知</Button></div> : null}
         </div>
       )}
@@ -89,7 +90,11 @@ export default function Notices() {
   )
 }
 
-function NoticeCard({ notice }: { notice: NoticeRecord }) {
+function NoticeCard({ notice, sources }: { notice: NoticeRecord; sources: SourceConfig[] }) {
+  const accountId = notice.accountId || 'legacy-default'
+  const source = sources.find((s) => s.accounts.some((a) => a.id === accountId))
+  const account = source?.accounts.find((a) => a.id === accountId)
+  const origin = source && account ? `${source.name} / ${account.name}` : `${notice.sourceId || '旧版来源'} / ${notice.accountId || '旧版账号'}`
   const result = notice.result
   const details = [
     ['时间', result.time], ['地点', result.place], ['事项', result.event], ['截止', result.deadline],
@@ -97,7 +102,7 @@ function NoticeCard({ notice }: { notice: NoticeRecord }) {
   return (
     <SectionCard
       title={<span className="flex flex-wrap items-center gap-2"><IntentChip intent={urgencyIntent(result.level)}>{urgencyLabel(result.level)}</IntentChip><span>{result.title || '群通知'}</span></span>}
-      description={<span className="tabular-nums">{notice.group || `群 ${notice.groupId}`} · {fmtDateTime(notice.createdAt)}</span>}
+      description={<span className="tabular-nums">{origin} · {notice.group || `群 ${notice.groupId}`} · {fmtDateTime(notice.createdAt)}</span>}
     >
       <div className="flex flex-col gap-4">
         {result.summary ? <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{result.summary}</p> : null}
@@ -108,7 +113,7 @@ function NoticeCard({ notice }: { notice: NoticeRecord }) {
         ) : null}
         <div className="flex flex-wrap items-center gap-3 text-xs text-muted">
           {notice.sources?.length ? <span>来源：{[...new Set(notice.sources.map((source) => source.nickname || String(source.userId)))].join('、')}</span> : null}
-          <Link to={`/groups/${notice.groupId}/history`} className="text-accent hover:underline">查看群聊记录</Link>
+          {account ? <a href={`/groups/${notice.groupId}/history?accountId=${encodeURIComponent(accountId)}`} className="text-accent hover:underline">查看群聊记录</a> : <span>原账号不可用</span>}
         </div>
       </div>
     </SectionCard>

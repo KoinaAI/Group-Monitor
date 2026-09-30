@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
+import { initializeAccountFromURL } from './lib/accounts'
+
+initializeAccountFromURL()
 
 // Standalone SPA entry. BrowserRouter drives client-side routing; react-aria's
 // RouterProvider is wired inside <App> so HeroUI links/sidebar items navigate
