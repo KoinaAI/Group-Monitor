@@ -8,13 +8,13 @@ import { Loader } from './Loader'
 // HttpOnly nap_session cookie is currently valid. The SPA never sees the cookie
 // and never re-implements auth — it only asks the backend "am I in?".
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<'loading' | 'authed' | 'anon'>('loading')
+  const [state, setState] = useState<'loading' | 'authed' | 'anon' | 'setup'>('loading')
 
   useEffect(() => {
     let alive = true
     api.auth
       .status()
-      .then((s) => alive && setState(s.authed ? 'authed' : 'anon'))
+      .then((s) => alive && setState(s.setupRequired ? 'setup' : s.authed ? 'authed' : 'anon'))
       .catch(() => alive && setState('anon'))
     return () => {
       alive = false
@@ -22,6 +22,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   }, [])
 
   if (state === 'loading') return <Loader fullscreen label="正在校验会话…" />
+  if (state === 'setup') return <Navigate to="/setup" replace />
   if (state === 'anon') return <Navigate to="/login" replace />
   return <>{children}</>
 }

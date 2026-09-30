@@ -1,3 +1,4 @@
+import { scopedURL } from './accounts'
 import { create } from 'zustand'
 import type {
   BufView,
@@ -82,7 +83,7 @@ export const useLive = create<LiveState>((set) => ({
 // discriminating `type`, so a single onmessage handler covers all of them.
 // EventSource auto-reconnects; we create it once and close it on teardown.
 export function connectLiveStream(): () => void {
-  const es = new EventSource('/api/events', { withCredentials: true })
+  const es = new EventSource(scopedURL('/api/events'), { withCredentials: true })
   const { apply, setConnected } = useLive.getState()
 
   es.onopen = () => setConnected(true)

@@ -254,3 +254,28 @@ func TestSetupGeneratesLocalTokenWhenEnvironmentUnset(t *testing.T) {
 		t.Fatal("public status exposed setup token")
 	}
 }
+
+func TestSetupAddingSourcePreservesMigratedAccounts(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Update(func(c *Config) {
+		c.Sources = []SourceConfig{{ID: "old", Name: "已有渠道", Kind: "napcat", Accounts: []SourceAccount{{ID: "old-account", Name: "原账号"}}}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte("test-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	added := []SourceConfig{{ID: "new", Name: "新增渠道", Kind: "napcat", Accounts: []SourceAccount{}}}
+	cfg, err := store.completeSetup(setupRequest{Sources: &added}, string(hash))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Sources) != 2 || cfg.Sources[0].Accounts[0].ID != "old-account" {
+		t.Fatal("setup replaced existing sources")
+	}
+}

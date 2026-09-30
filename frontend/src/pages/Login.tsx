@@ -25,6 +25,7 @@ export default function Login() {
     api.auth
       .status()
       .then((s) => {
+        if (s.setupRequired) { navigate('/setup', { replace: true }); return }
         if (s.authed) {
           navigate('/', { replace: true })
           return

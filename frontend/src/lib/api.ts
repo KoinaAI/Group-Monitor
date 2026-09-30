@@ -1,4 +1,7 @@
+import { scopedURL } from './accounts'
 import type {
+  SourceConfig,
+  SourceStatus,
   AuthStatus,
   BackupConfig,
   BackupStatus,
@@ -47,7 +50,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(scopedURL(`/api${path}`), {
     credentials: 'include',
     ...init,
     headers: {
@@ -85,6 +88,15 @@ const post = <T>(path: string, data?: unknown) =>
 // the backend — there is no per-section GET, so pages load their initial values
 // from `api.config()` (the full Config) and save through these section calls.
 export const api = {
+  setup: {
+    status: () => get<{ required: boolean; tokenRequired: boolean }>('/setup/status'),
+    complete: (body: { setupToken: string; password: string; llm?: LLMConfig; sources?: SourceConfig[] }) => post<{ ok: boolean }>('/setup', body),
+  },
+  sources: {
+    list: () => get<SourceConfig[]>('/sources'),
+    save: (sources: SourceConfig[]) => post<SourceConfig[]>('/sources', { sources }),
+    status: () => get<SourceStatus[]>('/sources/status'),
+  },
   auth: {
     status: () => get<AuthStatus>('/auth/status'),
     otpRequest: () =>
@@ -119,19 +131,19 @@ export const api = {
     // and re-serves it with Content-Disposition, so an <a href> saves the file
     // under its real name instead of a bare "下载". Not a fetch — a URL to visit.
     fileDownloadUrl: (groupId: number, fileId: string, name: string, busid?: number) =>
-      `/api/groups/file-download?groupId=${groupId}&fileId=${encodeURIComponent(fileId)}` +
+      scopedURL(`/api/groups/file-download?groupId=${groupId}&fileId=${encodeURIComponent(fileId)}` +
       `&name=${encodeURIComponent(name)}` +
-      (busid ? `&busid=${busid}` : ''),
+      (busid ? `&busid=${busid}` : '')),
     // Same-origin proxy for an inline history image/voice/video. A raw QQ CDN URL
     // handed to <img>/<audio> is blocked by Chrome (net::ERR_BLOCKED_BY_ORB) and
     // renders broken; routing it through /api makes it same-origin and served with
     // a clean media content-type. Not a fetch — a URL to put in a src.
-    mediaUrl: (url: string) => `/api/groups/media?u=${encodeURIComponent(url)}`,
+    mediaUrl: (url: string) => scopedURL(`/api/groups/media?u=${encodeURIComponent(url)}`),
     // Same-origin, transcoded voice: QQ voice is AMR/SILK (no browser decodes it)
     // and the CDN mislabels it audio/mp3, so an <audio> pointed at the raw URL just
     // fails to load. The backend runs it through NapCat get_record (ffmpeg) and
     // serves real mp3. Not a fetch — a URL to put in <audio src>.
-    voiceUrl: (file: string) => `/api/groups/voice?file=${encodeURIComponent(file)}`,
+    voiceUrl: (file: string) => scopedURL(`/api/groups/voice?file=${encodeURIComponent(file)}`),
   },
 
   masters: {

@@ -12,9 +12,11 @@ import { setUnauthorizedHandler } from './lib/api'
 import { RequireAuth } from './components/RequireAuth'
 import { AppLayout } from './components/AppLayout'
 import LoginPage from './pages/Login'
+import Setup from './pages/Setup'
 
 // Route-level code splitting: the authed pages load on demand behind the
 // AppLayout Suspense boundary, keeping the initial (login) bundle lean.
+const Sources = lazy(() => import('./pages/Sources'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Groups = lazy(() => import('./pages/Groups'))
 const GroupHistory = lazy(() => import('./pages/groups/GroupHistory'))
@@ -48,6 +50,7 @@ export default function App() {
     <RouterProvider navigate={navigate} useHref={useHref}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/setup" element={<Setup />} />
         <Route element={<RequireAuth><AppLayout /></RequireAuth>}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/groups" element={<Groups />} />
@@ -58,6 +61,7 @@ export default function App() {
           <Route path="/rules" element={<Rules />} />
           <Route path="/intelligence" element={<Intelligence />} />
           <Route path="/connection" element={<Connection />} />
+          <Route path="/sources" element={<Sources />} />
           <Route path="/storage" element={<Storage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

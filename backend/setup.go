@@ -114,7 +114,7 @@ func (s *Store) completeSetup(body setupRequest, hash string) (Config, error) {
 		next.LLM = llm
 	}
 	if body.Sources != nil {
-		next.Sources = *body.Sources
+		next.Sources = append(next.Sources, cloneSources(*body.Sources)...)
 	}
 	if err := validateConfig(next); err != nil {
 		return Config{}, setupValidationError{err}

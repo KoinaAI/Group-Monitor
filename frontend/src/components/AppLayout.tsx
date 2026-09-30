@@ -2,6 +2,9 @@ import { Suspense, useEffect } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { AppLayout as ProLayout, Navbar, Sidebar, useSidebar } from '@heroui-pro/react'
 import { Button, Tooltip } from '@heroui/react'
+import { AccountSelector } from './AccountSelector'
+import { activeAccount } from '../lib/accounts'
+import { Link } from 'react-router-dom'
 import { Loader } from './Loader'
 import { ThemeToggle } from './ThemeToggle'
 import { AppIcon } from '../lib/icons'
@@ -42,7 +45,7 @@ function AccountFooter() {
   const connected = useLive((s) => s.status?.onebotConnected ?? false)
   const selfId = useLive((s) => s.status?.selfId ?? 0)
   const { data: status } = useApi(api.status, [])
-  const name = status?.account?.nickname || (selfId ? String(selfId) : 'NapCat')
+  const name = status?.account?.nickname || (selfId ? String(selfId) : activeAccount() ? 'NapCat' : '管理账户')
 
   const logout = () =>
     api.auth.logout().finally(() => navigate('/login', { replace: true }))
@@ -64,7 +67,7 @@ function AccountFooter() {
       <div className="flex flex-col items-center gap-2 py-1">
         <span
           className={`size-2 rounded-full ${connected ? 'bg-success' : 'bg-muted'}`}
-          aria-label={connected ? 'NapCat 已连接' : 'NapCat 未连接'}
+          aria-label={connected ? 'NapCat 已连接' : activeAccount() ? 'NapCat 未连接' : '密码登录'}
         />
         {logoutBtn}
       </div>
@@ -80,7 +83,7 @@ function AccountFooter() {
       <div className="min-w-0 flex-1 leading-tight" data-sidebar="label">
         <p className="truncate text-xs font-medium text-foreground">{name}</p>
         <p className="truncate text-[11px] text-muted">
-          {connected ? 'NapCat 已连接' : 'NapCat 未连接'}
+          {connected ? 'NapCat 已连接' : activeAccount() ? 'NapCat 未连接' : '密码登录'}
         </p>
       </div>
       {logoutBtn}
@@ -136,10 +139,11 @@ function TopNav() {
       <Navbar.Header>
         <ProLayout.MenuToggle />
         <Sidebar.Trigger />
-        <span className="ml-1 text-sm font-semibold text-foreground">
+        <span className="ml-1 hidden whitespace-nowrap text-sm font-semibold text-foreground sm:inline">
           {title}
         </span>
         <Navbar.Spacer />
+        <AccountSelector />
         <ThemeToggle />
       </Navbar.Header>
     </Navbar>
@@ -147,6 +151,8 @@ function TopNav() {
 }
 
 export function AppLayout() {
+  const { pathname } = useLocation()
+  const needsAccount = /^(\/groups|\/masters|\/connection)/.test(pathname) && !activeAccount()
   useEffect(() => {
     const stop = connectLiveStream()
     const { seedEscalations, seedLogs } = useLive.getState()
@@ -170,7 +176,7 @@ export function AppLayout() {
       }
     >
       <Suspense fallback={<Loader label="正在加载…" />}>
-        <Outlet />
+        {needsAccount ? <div className="p-8"><h2 className="text-lg font-semibold">选择一个信息源账号</h2><p className="mt-2 text-sm text-muted">使用顶部菜单选择账号，分别管理它的群、主人和规则。</p><Link className="mt-4 inline-block text-accent" to="/sources">添加或管理信息源</Link></div> : <Outlet />}
       </Suspense>
     </ProLayout>
   )

@@ -100,6 +100,8 @@ export interface Rules {
 }
 
 export interface Config {
+  security: { initialized: boolean }
+  sources: SourceConfig[]
   onebot: OneBotConfig
   llm: LLMConfig
   jev: JevConfig
@@ -113,6 +115,7 @@ export interface Config {
 
 // ---- Auth (backend/auth.go) — GET /api/auth/status is PUBLIC ----
 export interface AuthStatus {
+  setupRequired?: boolean
   authed: boolean
   otpAvailable: boolean
   passwordConfigured: boolean
@@ -202,6 +205,8 @@ export interface LLMResult {
 }
 
 export interface NoticeRecord {
+  sourceId?: string
+  accountId?: string
   id: string
   createdAt: number
   groupId: number
@@ -319,3 +324,20 @@ export interface LogEntry {
   group?: string
   text: string
 }
+
+export interface SourceAccount {
+  id: string
+  name: string
+  enabled: boolean
+  onebot: OneBotConfig
+  groups: GroupWatch[]
+  masters: Master[]
+  rules?: Rules
+}
+export interface SourceConfig {
+  id: string
+  name: string
+  kind: 'napcat'
+  accounts: SourceAccount[]
+}
+export interface SourceStatus { sourceId: string; accountId: string; connected: boolean; selfId: number }

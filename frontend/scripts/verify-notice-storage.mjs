@@ -23,6 +23,7 @@ await page.route('**/api/**', async (route) => {
   let status = 200
   let body = {}
   if (path === '/api/auth/status') body = { authed: true }
+  else if (path === '/api/sources') body = []
   else if (path === '/api/config') body = config
   else if (path === '/api/status') body = { account: { nickname: '测试账号' } }
   else if (path === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: ': ready\n\n' })

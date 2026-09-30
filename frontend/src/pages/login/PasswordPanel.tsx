@@ -35,7 +35,7 @@ export function PasswordPanel({ onAuthed }: { onAuthed: () => void }) {
     >
       <TextField value={pw} onChange={setPw} type="password" isRequired autoFocus>
         <Label>管理密码</Label>
-        <Input placeholder="输入应急管理密码" variant="secondary" />
+        <Input placeholder="输入管理密码" variant="secondary" />
       </TextField>
       {err ? (
         <Alert status="danger">
@@ -50,7 +50,7 @@ export function PasswordPanel({ onAuthed }: { onAuthed: () => void }) {
         登录
       </Button>
       <p className="text-center text-xs text-muted">
-        应急通道 · 仅在无主人或 NapCat 离线时可用
+        使用初始化时设置的密码登录
       </p>
     </Form>
   )
