@@ -13,6 +13,7 @@ import (
 // Config is the full persisted state of the notifier. It is written to disk as
 // JSON whenever the frontend saves changes, and loaded once on startup.
 type Config struct {
+	AgentKeys           []AgentKey           `json:"agentKeys"`
 	NotificationTargets []NotificationTarget `json:"notificationTargets"`
 	Security            SecurityConfig       `json:"security"`
 	Sources             []SourceConfig       `json:"sources"`
@@ -293,6 +294,7 @@ func (s *Store) Update(fn func(*Config)) (Config, error) {
 }
 
 func cloneConfig(c Config) Config {
+	c.AgentKeys = cloneAgentKeys(c.AgentKeys)
 	c.NotificationTargets = cloneNotificationTargets(c.NotificationTargets)
 	c.Sources = cloneSources(c.Sources)
 	c.Masters = slices.Clone(c.Masters)
@@ -357,6 +359,9 @@ func validText(s string, max int) bool {
 // Zero values that historically meant "use the default" are normalized by the
 // API handlers before Update; persisted values themselves must stay bounded.
 func validateConfig(c Config) error {
+	if err := validateAgentKeys(c.AgentKeys); err != nil {
+		return err
+	}
 	if err := validateNotificationTargets(c.NotificationTargets); err != nil {
 		return err
 	}

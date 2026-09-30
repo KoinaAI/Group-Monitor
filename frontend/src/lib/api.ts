@@ -1,5 +1,6 @@
 import { scopedURL } from './accounts'
 import type {
+  AgentKey,
   NotificationTarget,
   SourceConfig,
   SourceStatus,
@@ -89,6 +90,11 @@ const post = <T>(path: string, data?: unknown) =>
 // the backend — there is no per-section GET, so pages load their initial values
 // from `api.config()` (the full Config) and save through these section calls.
 export const api = {
+  agentKeys: {
+    list: () => get<AgentKey[]>('/agent-keys'),
+    create: (name: string, accountIds: string[]) => post<{ apiKey: string; key: AgentKey; keys: AgentKey[] }>('/agent-keys', { name, accountIds }),
+    revoke: (id: string) => post<AgentKey[]>('/agent-keys/revoke', { id }),
+  },
   notifications: {
     list: () => get<NotificationTarget[]>('/notifications'),
     save: (targets: NotificationTarget[]) => post<NotificationTarget[]>('/notifications', { targets }),

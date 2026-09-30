@@ -61,6 +61,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, limit int64) er
 func redactedConfig(c Config) Config {
 	c = cloneConfig(c)
 	c.Security.PasswordHash = ""
+	c.AgentKeys = redactedAgentKeys(c.AgentKeys)
 	c.NotificationTargets = redactedNotificationTargets(c.NotificationTargets)
 	c.Sources = redactedSources(c.Sources)
 	c.OneBot.Token = ""
@@ -100,6 +101,7 @@ func (a *API) SetBackupManager(backup *BackupManager) { a.backup = backup }
 func (a *API) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	a.registerSetupRoutes(mux)
+	a.registerAgentRoutes(mux)
 
 	// Public endpoints: the login gate itself. Everything else needs a session.
 	mux.HandleFunc("/api/auth/status", a.accountHandler("/api/auth/status", a.handleAuthStatus))

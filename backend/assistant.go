@@ -48,16 +48,17 @@ func assistantTool(name, description, schema string) historyTool {
 }
 
 type Assistant struct {
-	store   *Store
-	ob      *OneBot
-	hub     *Hub
-	notices *NoticeStore
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	active  map[int64]bool
-	stopped bool
-	wg      sync.WaitGroup
+	queryAccess func(Config) bool // API-key authorization; never used for private-message admission
+	store       *Store
+	ob          *OneBot
+	hub         *Hub
+	notices     *NoticeStore
+	ctx         context.Context
+	cancel      context.CancelFunc
+	mu          sync.Mutex
+	active      map[int64]bool
+	stopped     bool
+	wg          sync.WaitGroup
 }
 
 func NewAssistant(store *Store, ob *OneBot, hub *Hub, notices *NoticeStore) *Assistant {
@@ -231,13 +232,13 @@ func (a *Assistant) executeTool(ctx context.Context, userID int64, call historyT
 		return assistantError("Query cancelled.")
 	}
 	cfg := a.store.Get()
-	if !assistantAuthorized(cfg, userID) {
+	if !a.toolAuthorized(cfg, userID) {
 		return assistantError("Access denied.")
 	}
 	groups := watchedGroups(cfg)
 	defer func() {
 		current := a.store.Get()
-		if ctx.Err() != nil || !assistantAuthorized(current, userID) || !maps.Equal(groups, watchedGroups(current)) {
+		if ctx.Err() != nil || !a.toolAuthorized(current, userID) || !maps.Equal(groups, watchedGroups(current)) {
 			result = assistantError("Query cancelled or access changed.")
 		} else if len(result) > assistantToolBytes {
 			result = assistantError("Tool result exceeded the size limit. Narrow the query.")
@@ -515,4 +516,11 @@ func (a *Assistant) sourceContext(ctx context.Context, groups map[int64]string, 
 		}
 	}
 	return assistantJSON(result)
+}
+
+func (a *Assistant) toolAuthorized(cfg Config, userID int64) bool {
+	if a.queryAccess != nil {
+		return a.queryAccess(cfg)
+	}
+	return assistantAuthorized(cfg, userID)
 }

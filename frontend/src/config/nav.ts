@@ -36,6 +36,7 @@ export const NAV: NavSection[] = [
       { label: '规则', to: '/rules', icon: 'rules', hint: '静默窗口与升级条件' },
       { label: '智能', to: '/intelligence', icon: 'intelligence', hint: 'LLM 提炼与意图闸门' },
       { label: '存储', to: '/storage', icon: 'download', hint: '定期备份通知归档' },
+      { label: 'Agent 接入', to: '/agents', icon: 'lock', hint: 'MCP 与只读 API Key' },
       { label: '信息源', to: '/sources', icon: 'connection', hint: '渠道与账号连接' },
     ],
   },

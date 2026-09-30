@@ -347,3 +347,5 @@ export interface NotificationTarget {
   topic?: string; token?: string; deviceKey?: string; group?: string
   minLevel: number; accountIds?: string[]
 }
+
+export interface AgentKey { id: string; name: string; accountIds: string[]; createdAt: number }
