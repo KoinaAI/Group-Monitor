@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Checkbox } from '@heroui/react'
+import { Button } from '@heroui/react'
 import { EmptyState, NativeSelect } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
@@ -98,9 +98,10 @@ export default function Notifications() {
           <fieldset className="min-w-0">
             <legend className="mb-2 text-xs text-muted">适用账号（不选择时接收所有账号）</legend>
             <div className="flex flex-wrap gap-x-4 gap-y-2">
-              {accounts.length ? accounts.map((account) => <Checkbox key={account.id} isSelected={target.accountIds?.includes(account.id) ?? false} onChange={(checked) => change(target.id, { accountIds: checked ? [...(target.accountIds ?? []), account.id] : target.accountIds?.filter((id) => id !== account.id) })} isDisabled={busy}>
-                <Checkbox.Content className="text-sm"><Checkbox.Control><Checkbox.Indicator /></Checkbox.Control>{account.sourceName} / {account.name}</Checkbox.Content>
-              </Checkbox>) : <span className="text-xs text-muted">所有账号</span>}
+              {accounts.length ? accounts.map((account) => <label key={account.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" className="size-4 accent-[var(--accent)]" checked={target.accountIds?.includes(account.id) ?? false} disabled={busy} onChange={(event) => change(target.id, { accountIds: event.target.checked ? [...(target.accountIds ?? []), account.id] : target.accountIds?.filter((id) => id !== account.id) })} />
+                {account.sourceName} / {account.name}
+              </label>) : <span className="text-xs text-muted">所有账号</span>}
             </div>
           </fieldset>
           <div className="flex flex-wrap items-center justify-between gap-2">
