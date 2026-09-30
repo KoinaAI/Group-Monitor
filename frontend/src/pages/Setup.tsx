@@ -2,7 +2,9 @@ import { newAccount } from '../lib/accounts'
 import { uid } from '../lib/id'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card } from '@heroui/react'
+import { Alert, Button, Card, Form } from '@heroui/react'
+import { Stepper } from '@heroui-pro/react'
+import { AppIcon } from '../lib/icons'
 import { TextSetting } from '../components/ui/TextSetting'
 import { Toggle } from '../components/ui/Toggle'
 import { api } from '../lib/api'
@@ -35,33 +37,84 @@ export default function Setup() {
     } catch (e) { setError(e instanceof Error ? e.message : '初始化失败') }
     finally { setBusy(false) }
   }
-  return <div className="min-h-dvh bg-background px-5 py-12">
-    <div className="mx-auto max-w-xl">
-      <div className="mb-8"><img src="/brand-mark.svg" alt="" className="mb-4 size-10" /><h1 className="text-2xl font-semibold">设置讯枢</h1><p className="mt-2 text-sm text-muted">{step + 1} / 3 · {['管理密码', '智能模型', '首个信息源'][step]}</p></div>
-      <Card><div className="flex flex-col gap-5">
-        {step === 0 && <>
-          <TextSetting label="初始化令牌" value={token} onChange={setToken} type="password" description="从服务启动日志获取；也可通过 NAP_SETUP_TOKEN 设置。" />
-          <TextSetting label="管理密码" value={password} onChange={setPassword} type="password" description="设置 10–72 字节的密码，用于日常登录。" />
-          <TextSetting label="再次输入密码" value={confirm} onChange={setConfirm} type="password" />
-        </>}
-        {step === 1 && <>
-          <Toggle label="启用 LLM" description="可稍后在「智能」中配置。" isSelected={llm.enabled} onChange={(enabled) => setLlm({ ...llm, enabled })} />
-          {llm.enabled && <>
-            <TextSetting label="API 地址" value={llm.baseUrl} onChange={(baseUrl) => setLlm({ ...llm, baseUrl })} placeholder="https://api.example.com/v1" />
-            <TextSetting label="模型名称" value={llm.model} onChange={(model) => setLlm({ ...llm, model })} />
-            <TextSetting label="API Key" value={llm.apiKey} onChange={(apiKey) => setLlm({ ...llm, apiKey })} type="password" />
-          </>}
-        </>}
-        {step === 2 && <>
-          <Toggle label="添加 NapCat 账号" description="默认不连接任何信息源，稍后可逐一添加。已有配置会保留。" isSelected={addSource} onChange={setAddSource} />
-          {addSource && <AccountFields account={account} onChange={setAccount} />}
-        </>}
-        {error && <p role="alert" className="text-sm text-danger">{error}</p>}
-        <div className="flex justify-between gap-3 pt-2">
-          <Button variant="secondary" isDisabled={step === 0 || busy} onPress={() => setStep(step - 1)}>上一步</Button>
-          {step < 2 ? <Button onPress={next}>下一步</Button> : <Button isPending={busy} onPress={complete}>完成初始化</Button>}
-        </div>
-      </div></Card>
-    </div>
-  </div>
+  const steps = [
+    { title: '管理密码', description: '验证身份，保护工作台' },
+    { title: '智能模型', description: '按需开启消息分析' },
+    { title: '首个信息源', description: '连接 NapCat 账号' },
+  ]
+
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8 sm:px-6">
+      <div className="w-full max-w-4xl">
+        <header className="mb-5 flex items-center gap-3">
+          <img src="/brand-mark.svg" alt="" className="size-10" />
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight">设置讯枢</h1>
+            <p className="mt-0.5 text-sm text-muted">完成基础设置，开始管理消息与通知</p>
+          </div>
+          <span className="ml-auto shrink-0 text-sm tabular-nums text-muted">{step + 1} / 3</span>
+        </header>
+        <Card className="gap-0 overflow-hidden p-0 md:grid md:grid-cols-[240px_minmax(0,1fr)]">
+          <aside className="bg-surface-secondary p-5 md:p-6">
+            <Stepper currentStep={step} orientation="vertical" size="md" aria-label="初始化进度">
+              {steps.map((item) => (
+                <Stepper.Step key={item.title}>
+                  <Stepper.Indicator />
+                  <Stepper.Content>
+                    <Stepper.Title>{item.title}</Stepper.Title>
+                    <Stepper.Description>{item.description}</Stepper.Description>
+                  </Stepper.Content>
+                  <Stepper.Separator />
+                </Stepper.Step>
+              ))}
+            </Stepper>
+            <p className="mt-6 hidden text-xs leading-relaxed text-muted md:block">模型和信息源均为可选项，可在进入工作台后继续配置。</p>
+          </aside>
+          <Form
+            className="flex min-w-0 flex-col gap-5 p-5 sm:p-6"
+            onSubmit={(event) => {
+              event.preventDefault()
+              if (step < 2) next()
+              else if (!busy) void complete()
+            }}
+          >
+            <div>
+              <h2 className="text-base font-semibold">{steps[step].title}</h2>
+              <p className="mt-1 text-sm text-muted">{[
+                '验证初始化令牌，并设置用于登录的管理密码。',
+                '连接兼容 OpenAI 的模型服务，辅助识别重要消息。',
+                '添加接收消息的账号，或稍后在信息源中连接。',
+              ][step]}</p>
+            </div>
+            {step === 0 && <>
+              <TextSetting label="初始化令牌" value={token} onChange={setToken} type="password" description="从服务启动日志获取；也可通过 NAP_SETUP_TOKEN 设置。" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextSetting label="管理密码" value={password} onChange={setPassword} type="password" description="10–72 字节，用于日常登录。" />
+                <TextSetting label="再次输入密码" value={confirm} onChange={setConfirm} type="password" />
+              </div>
+            </>}
+            {step === 1 && <>
+              <Toggle label="启用 LLM" description="可稍后在「智能」中配置。" isSelected={llm.enabled} onChange={(enabled) => setLlm({ ...llm, enabled })} />
+              {llm.enabled && <div className="grid gap-4 sm:grid-cols-2">
+                <TextSetting className="sm:col-span-2" label="API 地址" value={llm.baseUrl} onChange={(baseUrl) => setLlm({ ...llm, baseUrl })} placeholder="https://api.example.com/v1" />
+                <TextSetting label="模型名称" value={llm.model} onChange={(model) => setLlm({ ...llm, model })} />
+                <TextSetting label="API Key" value={llm.apiKey} onChange={(apiKey) => setLlm({ ...llm, apiKey })} type="password" />
+              </div>}
+            </>}
+            {step === 2 && <>
+              <Toggle label="添加 NapCat 账号" description="默认不连接任何信息源，稍后可逐一添加。已有配置会保留。" isSelected={addSource} onChange={setAddSource} />
+              {addSource && <AccountFields account={account} onChange={setAccount} />}
+            </>}
+            {error && <Alert status="danger"><Alert.Indicator /><Alert.Content><Alert.Description>{error}</Alert.Description></Alert.Content></Alert>}
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <Button variant="tertiary" isDisabled={step === 0 || busy} onPress={() => { setError(''); setStep(step - 1) }}><AppIcon name="back" className="size-4" />上一步</Button>
+              {step < 2
+                ? <Button type="submit">下一步<AppIcon name="chevronRight" className="size-4" /></Button>
+                : <Button type="submit" isPending={busy}>完成初始化<AppIcon name="check" className="size-4" /></Button>}
+            </div>
+          </Form>
+        </Card>
+      </div>
+    </main>
+  )
 }
