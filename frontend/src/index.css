@@ -30,7 +30,7 @@ body {
   background-color: var(--workspace-wallpaper-color);
   background-image: var(--workspace-wallpaper);
   background-repeat: repeat;
-  background-size: 480px 480px;
+  background-size: 600px 600px;
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
