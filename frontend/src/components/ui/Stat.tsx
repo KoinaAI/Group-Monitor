@@ -31,7 +31,7 @@ export function Stat({
       <div className="flex items-center gap-3">
         <div
           className={cn(
-            'grid size-10 shrink-0 place-items-center rounded-xl',
+            'grid size-9 shrink-0 place-items-center rounded-xl',
             iconTone[tone],
           )}
         >
@@ -39,7 +39,7 @@ export function Stat({
         </div>
         <div className="min-w-0">
           <p className="truncate text-xs text-muted">{label}</p>
-          <p className="text-xl font-semibold tabular-nums text-foreground">{value}</p>
+          <p className="text-lg font-semibold tabular-nums text-foreground sm:text-xl">{value}</p>
           {hint ? <p className="truncate text-xs text-muted">{hint}</p> : null}
         </div>
       </div>

@@ -114,7 +114,7 @@ function SidebarInner() {
                   id={item.to}
                   href={item.to}
                   textValue={item.label}
-                  isCurrent={pathname === item.to || (section.title === '配置中心' && navSection(pathname)?.items[0].to === item.to) || (item.to === '/groups' && pathname.startsWith('/groups/'))}
+                  isCurrent={pathname === item.to || (item.to === '/groups' && pathname.startsWith('/groups/')) || (item.to === '/sources' && pathname === '/connection')}
                 >
                   <Sidebar.MenuIcon>
                     <AppIcon name={item.icon} className="size-4" />

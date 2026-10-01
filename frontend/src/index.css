@@ -19,10 +19,8 @@ body,
 body {
   margin: 0;
   background:
-    linear-gradient(
-      color-mix(in oklab, var(--background) 55%, transparent),
-      color-mix(in oklab, var(--background) 55%, transparent)
-    ),
+    radial-gradient(circle at 80% -12%, color-mix(in oklab, var(--accent) 10%, transparent), transparent 32%),
+    radial-gradient(circle at 18% 18%, color-mix(in oklab, var(--foreground) 3%, transparent), transparent 28%),
     var(--background-gradient),
     var(--background, Canvas);
   background-attachment: fixed;
@@ -38,24 +36,42 @@ body {
 
 /* Compact workspace: native Pro surfaces and a single content scroll area. */
 .workspace-shell {
-  --sidebar-width: 216px;
-  --navbar-height: 56px;
+  --sidebar-width: 232px;
+  --navbar-height: 54px;
   background: transparent;
 }
-.workspace-page { overflow-wrap: anywhere; }
+.workspace-page {
+  overflow-wrap: anywhere;
+  max-width: 1320px;
+  padding-top: 1.5rem;
+  padding-bottom: 2.5rem;
+}
 .workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { font-weight: 600; }
 .workspace-shell .app-layout__toolbar { position: relative; top: auto; }
-.workspace-shell .app-layout__main { scroll-padding-top: 1.5rem; background: transparent; }
+.workspace-shell .app-layout__main {
+  scroll-padding-top: 1.5rem;
+  background: linear-gradient(180deg, color-mix(in oklab, var(--surface-secondary) 56%, transparent), transparent 42%);
+}
 .workspace-shell [data-slot="sidebar"],
 .workspace-shell .app-layout__header,
 .workspace-shell .app-layout__toolbar {
-  background: color-mix(in oklab, var(--background) 80%, transparent);
+  background: color-mix(in oklab, var(--background) 78%, transparent);
   backdrop-filter: blur(var(--glass-blur));
 }
-.workspace-shell .app-layout__toolbar { border-color: var(--separator); }
+.workspace-shell [data-slot="sidebar"] { border-color: color-mix(in oklab, var(--separator) 70%, transparent); }
+.workspace-shell .app-layout__toolbar { border-color: color-mix(in oklab, var(--separator) 74%, transparent); }
+.workspace-shell [data-slot="sidebar-menu-item"] {
+  min-height: 2.35rem;
+  border-radius: .75rem;
+  transition: background-color 140ms ease, color 140ms ease;
+}
 .workspace-shell .workspace-subnav-active { background: var(--surface); }
 .workspace-shell .workspace-subnav:hover { background: var(--surface-secondary); }
-.workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { background: var(--surface); }
+.workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] {
+  background: color-mix(in oklab, var(--surface) 88%, var(--accent) 12%);
+  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+.workspace-shell [data-slot="sidebar-menu-item"]:hover:not([aria-current="page"]) { background: var(--surface-secondary); }
 .glass-light .workspace-popover,
 .glass-dark .workspace-popover {
   background: var(--overlay);
@@ -63,6 +79,7 @@ body {
   box-shadow: var(--overlay-shadow);
 }
 @media (max-width: 640px) {
+  .workspace-page { padding-top: 1rem; padding-bottom: 2rem; }
   .workspace-page .segment {
     max-width: 100%;
     flex-wrap: nowrap;
@@ -71,6 +88,46 @@ body {
   }
   .workspace-page .segment::-webkit-scrollbar { display: none; }
   .workspace-page .segment__item { width: auto; flex: 0 0 auto; }
+}
+
+/* Shared surface language for the workspace: modest borders, compact headers,
+   and enough contrast to make neighboring widgets scan as separate modules. */
+.workspace-shell [data-slot="widget"],
+.workspace-shell [data-slot="card"] {
+  border: 1px solid color-mix(in oklab, var(--separator) 72%, transparent);
+  box-shadow: 0 10px 28px color-mix(in oklab, var(--foreground) 4%, transparent);
+}
+.workspace-shell [data-slot="widget"] [data-slot="widget-header"],
+.workspace-shell [data-slot="card"] [data-slot="card-header"] {
+  min-height: 3.25rem;
+}
+.workspace-shell [data-slot="widget-title"],
+.workspace-shell [data-slot="card-title"] { letter-spacing: -.01em; }
+.workspace-shell .page-header {
+  padding: .25rem 0 .1rem;
+}
+.workspace-shell .page-header h1 { letter-spacing: -.035em; }
+
+.dashboard-hero {
+  border: 1px solid color-mix(in oklab, var(--accent) 18%, var(--separator));
+  background:
+    linear-gradient(135deg, color-mix(in oklab, var(--accent) 9%, var(--surface)), var(--surface) 58%),
+    var(--surface);
+  box-shadow: 0 14px 32px color-mix(in oklab, var(--accent) 7%, transparent);
+}
+.dashboard-hero [data-slot="kpi"] { background: color-mix(in oklab, var(--surface) 78%, transparent); }
+.dashboard-section-label {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--muted);
+  font-size: .75rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace-shell [data-slot="sidebar-menu-item"] { transition: none; }
 }
 
 /* ActionBar is fixed; center it over the content remaining beside the rail. */

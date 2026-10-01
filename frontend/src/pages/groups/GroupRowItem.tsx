@@ -1,4 +1,4 @@
-import { Avatar, Button, Switch } from '@heroui/react'
+import { Avatar, Button, Switch, Tooltip } from '@heroui/react'
 import { ListView } from '@heroui-pro/react'
 import { useNavigate } from 'react-router-dom'
 import { AppIcon } from '../../lib/icons'
@@ -17,7 +17,7 @@ export function GroupRowItem({ row, watch, onWatch, isDisabled }: {
   })
 
   return (
-    <ListView.Item id={row.groupId} textValue={row.groupName || String(row.groupId)} className="gap-3 !py-3">
+    <ListView.Item id={row.groupId} textValue={row.groupName || String(row.groupId)} className="gap-3 !py-2.5">
       <Avatar size="sm" className="shrink-0">
         <Avatar.Image src={groupAvatar(row.groupId)} alt={row.groupName || String(row.groupId)} loading="lazy" />
         <Avatar.Fallback>{(row.groupName || 'Q').slice(0, 1)}</Avatar.Fallback>
@@ -30,10 +30,13 @@ export function GroupRowItem({ row, watch, onWatch, isDisabled }: {
         <ListView.Description className="block tabular-nums">{row.groupId} · {row.memberCount} 名成员</ListView.Description>
       </ListView.ItemContent>
       <ListView.ItemAction className="flex items-center gap-2 sm:gap-3">
-        <Button size="sm" variant="secondary" onPress={openHistory} className="gap-1.5">
-          <AppIcon name="clock" className="size-4" />
-          <span>历史记录</span>
-        </Button>
+        <Tooltip>
+          <Button size="sm" variant="secondary" onPress={openHistory} aria-label="查看历史记录" className="gap-1.5">
+            <AppIcon name="clock" className="size-4" />
+            <span className="hidden sm:inline">历史记录</span>
+          </Button>
+          <Tooltip.Content>查看历史记录</Tooltip.Content>
+        </Tooltip>
         <Switch isSelected={watch} onChange={onWatch} isDisabled={isDisabled} size="sm" aria-label="监听该群">
           <Switch.Content><Switch.Control><Switch.Thumb /></Switch.Control></Switch.Content>
         </Switch>
