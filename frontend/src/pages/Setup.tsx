@@ -44,7 +44,7 @@ export default function Setup() {
   ]
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8 sm:px-6">
+    <main className="flex min-h-dvh items-center justify-center px-4 py-8 sm:px-6">
       <div className="w-full max-w-4xl">
         <header className="mb-5 flex items-center gap-3">
           <img src="/brand-mark.svg" alt="" className="size-10" />

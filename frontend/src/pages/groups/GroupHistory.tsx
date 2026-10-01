@@ -145,7 +145,7 @@ function DownloadMenu({
     >
       <div
         style={{ left: x, top: y }}
-        className="fixed min-w-36 rounded-lg border border-border bg-surface p-1 shadow-lg"
+        className="workspace-popover fixed min-w-36 rounded-lg border border-border p-1"
       >
         <a
           href={href}
@@ -193,7 +193,7 @@ function AudioSeg({ file, url }: { file?: string; url?: string }) {
         setMenu({ x: e.clientX, y: e.clientY })
       }}
     >
-      <div className="flex items-center gap-2.5 rounded-2xl rounded-tl-md bg-surface px-3 py-2 shadow-sm">
+      <div className="flex items-center gap-2.5 rounded-2xl rounded-tl-md bg-surface px-3 py-2">
         <button
           type="button"
           onClick={toggle}
@@ -642,4 +642,3 @@ export default function GroupHistory() {
     </Page>
   )
 }
-

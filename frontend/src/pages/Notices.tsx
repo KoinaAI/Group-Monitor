@@ -96,7 +96,7 @@ export default function Notices() {
               >
                 <Input placeholder="按群名筛选，可多选" variant="secondary" />
               </TextField>
-              {groupSearchOpen ? <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+              {groupSearchOpen ? <div className="workspace-popover absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border">
                 <ListBox aria-label="群组筛选结果" className="max-h-64 overflow-y-auto py-1">
                   {groupSuggestions.length === 0 ? <ListBox.Item id="empty" isDisabled textValue="没有匹配的群组">没有匹配的群组</ListBox.Item> : groupSuggestions.map((row) => {
                     const selected = groupIds.has(String(row.groupId))

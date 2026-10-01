@@ -110,7 +110,7 @@ export default function Login() {
 // Keep service context beside the compact auth form on wider screens.
 function Shell({ children, footer }: { children: ReactNode; footer?: ReactNode }) {
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-8 sm:px-6">
+    <main className="flex min-h-dvh items-center justify-center px-4 py-8 sm:px-6">
       <Card className="w-full max-w-3xl gap-0 overflow-hidden p-0 sm:grid sm:grid-cols-[0.85fr_1.15fr]">
         <div className="flex flex-col gap-6 bg-surface-secondary p-6 sm:p-8">
           <div className="flex items-center gap-3">

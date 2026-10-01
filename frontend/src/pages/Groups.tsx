@@ -88,7 +88,7 @@ export default function Groups() {
             >
               <Input placeholder="输入群名或群号，可多选" variant="secondary" />
             </TextField>
-            {searchOpen ? <div className="absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+            {searchOpen ? <div className="workspace-popover absolute inset-x-0 top-full z-30 mt-1 overflow-hidden rounded-lg border border-border">
               <ListBox aria-label="群组搜索结果" className="max-h-64 overflow-y-auto py-1">
                 {suggestions.length === 0 ? <ListBox.Item id="empty" isDisabled textValue="没有匹配的群组">没有匹配的群组</ListBox.Item> : suggestions.map((row) => {
                   const selected = selectedGroupIds.has(String(row.groupId))
