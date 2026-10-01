@@ -81,7 +81,7 @@ export function DocumentForm({ initial }: { initial: DocumentConfig }) {
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <NumberSetting label="解析超时（秒）" value={config.timeoutSec} onChange={(timeoutSec) => set({ timeoutSec })} minValue={1} maxValue={600} />
             <NumberSetting label="单文件上限（MB）" value={config.maxFileMB} onChange={(maxFileMB) => set({ maxFileMB })} minValue={1} maxValue={100} />
-            <NumberSetting label="正文字符上限" value={config.maxTextChars} onChange={(maxTextChars) => set({ maxTextChars })} minValue={256} maxValue={32000} step={1000} />
+            <NumberSetting label="正文字符上限" value={config.maxTextChars} onChange={(maxTextChars) => set({ maxTextChars })} minValue={256} maxValue={32000} />
               </div>
             </details>
             {config.mode === 'agent' ? <p className="text-xs leading-5 text-muted">免费，无需 Key，按 IP 限流</p> : null}
