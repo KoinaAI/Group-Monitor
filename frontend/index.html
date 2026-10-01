@@ -9,16 +9,17 @@
       // mode. Mirrors src/lib/theme.ts — keep the storage key ('nap-theme') and
       // this logic in sync with that module.
       (function () {
-        try {
-          var v = localStorage.getItem('nap-theme');
-          var pref = v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
-          var dark =
-            pref === 'dark' ||
-            (pref === 'system' &&
-              window.matchMedia('(prefers-color-scheme: dark)').matches);
-          document.documentElement.classList.toggle('dark', dark);
-          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-        } catch (e) {}
+        var v;
+        try { v = localStorage.getItem('nap-theme'); } catch (e) {}
+        var pref = v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
+        var dark =
+          pref === 'dark' ||
+          (pref === 'system' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.classList.toggle('glass-light', !dark);
+        document.documentElement.classList.toggle('glass-dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
       })();
     </script>
     <title>讯枢 · 控制台</title>

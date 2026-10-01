@@ -176,8 +176,8 @@ export function AppLayout() {
       scrollMode="content"
       navigate={navigate}
       navbar={<TopNav />}
-      toolbar={section && section.title !== '工作台' ? <nav aria-label="配置页面" className="flex gap-1 overflow-x-auto border-b border-separator bg-background px-4 py-2 sm:px-6">
-        {section.items.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => `whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${isActive ? 'bg-surface font-medium text-foreground shadow-sm' : 'text-muted hover:bg-surface-secondary'}`}>{item.label}</NavLink>)}
+      toolbar={section && section.title !== '工作台' ? <nav aria-label="配置页面" className="flex gap-1 overflow-x-auto border-b border-separator px-4 py-2 sm:px-6">
+        {section.items.map((item) => <NavLink key={item.to} to={item.to} className={({ isActive }) => `workspace-subnav whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${isActive ? 'workspace-subnav-active font-medium text-foreground' : 'text-muted'}`}>{item.label}</NavLink>)}
       </nav> : undefined}
       sidebar={
         <>

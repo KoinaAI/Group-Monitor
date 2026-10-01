@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 @import "@heroui-pro/react/css";
+@import "@heroui-pro/react/themes/glass";
 
 /* Class-based dark mode. HeroUI keys its dark tokens off a `.dark` ancestor,
    which we set on <html> in index.html. `@custom-variant` is the Tailwind v4
@@ -17,12 +18,14 @@ body,
 
 body {
   margin: 0;
-  /* HeroUI's semantic canvas token; it flips with the `.dark` class. (The old
-     `--heroui-background` name doesn't exist in this version and silently fell
-     back to a hardcoded dark value, so light mode showed a black canvas.) The
-     `Canvas` system-color fallback tracks `color-scheme` for the brief moment
-     before the stylesheet resolves, avoiding a flash. */
-  background-color: var(--background, Canvas);
+  background:
+    linear-gradient(
+      color-mix(in oklab, var(--background) 55%, transparent),
+      color-mix(in oklab, var(--background) 55%, transparent)
+    ),
+    var(--background-gradient),
+    var(--background, Canvas);
+  background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -37,11 +40,28 @@ body {
 .workspace-shell {
   --sidebar-width: 216px;
   --navbar-height: 56px;
+  background: transparent;
 }
 .workspace-page { overflow-wrap: anywhere; }
 .workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { font-weight: 600; }
 .workspace-shell .app-layout__toolbar { position: relative; top: auto; }
-.workspace-shell .app-layout__main { scroll-padding-top: 1.5rem; }
+.workspace-shell .app-layout__main { scroll-padding-top: 1.5rem; background: transparent; }
+.workspace-shell [data-slot="sidebar"],
+.workspace-shell .app-layout__header,
+.workspace-shell .app-layout__toolbar {
+  background: color-mix(in oklab, var(--background) 80%, transparent);
+  backdrop-filter: blur(var(--glass-blur));
+}
+.workspace-shell .app-layout__toolbar { border-color: var(--separator); }
+.workspace-shell .workspace-subnav-active { background: var(--surface); }
+.workspace-shell .workspace-subnav:hover { background: var(--surface-secondary); }
+.workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { background: var(--surface); }
+.glass-light .workspace-popover,
+.glass-dark .workspace-popover {
+  background: var(--overlay);
+  backdrop-filter: blur(var(--glass-blur));
+  box-shadow: var(--overlay-shadow);
+}
 @media (max-width: 640px) {
   .workspace-page .segment {
     max-width: 100%;

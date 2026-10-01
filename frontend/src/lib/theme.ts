@@ -27,12 +27,13 @@ export function resolveTheme(pref: ThemePref): 'light' | 'dark' {
   return pref
 }
 
-// Apply a preference to <html>: toggle the `.dark` class HeroUI keys its dark
-// tokens off, and set `color-scheme` so the UA canvas/scrollbars match.
+// Keep HeroUI's base dark tokens and Pro's Glass tokens in sync.
 export function applyTheme(pref: ThemePref): void {
   const resolved = resolveTheme(pref)
   const root = document.documentElement
   root.classList.toggle('dark', resolved === 'dark')
+  root.classList.toggle('glass-light', resolved === 'light')
+  root.classList.toggle('glass-dark', resolved === 'dark')
   root.style.colorScheme = resolved
 }
 
