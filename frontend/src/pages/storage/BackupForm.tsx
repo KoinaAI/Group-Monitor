@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@heroui/react'
-import { Segment, Widget } from '@heroui-pro/react'
+import { Segment } from '@heroui-pro/react'
 import { SectionCard } from '../../components/ui/SectionCard'
 import { TextSetting } from '../../components/ui/TextSetting'
 import { NumberSetting } from '../../components/ui/NumberSetting'
@@ -69,13 +69,13 @@ export function BackupForm({ initial }: { initial: BackupConfig }) {
   }
 
   return (
-    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,1fr)]">
+    <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
       <SectionCard
         title="云端备份"
         description="归档文件上传至 S3 兼容存储，不包含密钥或连接配置。"
         actions={<Button size="sm" onPress={save} isPending={saving} isDisabled={!dirty || running}>保存更改</Button>}
       >
-        <fieldset disabled={saving || running} className="flex min-w-0 flex-col gap-4">
+        <fieldset disabled={saving || running} className="flex min-w-0 flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm font-medium">存储服务</span>
             <Segment aria-label="存储服务" selectedKey={config.provider} onSelectionChange={(key) => set({ provider: key as 'r2' | 's3', region: key === 'r2' ? 'auto' : 'us-east-1' })}>
@@ -89,8 +89,8 @@ export function BackupForm({ initial }: { initial: BackupConfig }) {
               <Button variant="secondary" isDisabled={!/^[a-f\d]{32}$/i.test(account.trim())} onPress={() => set({ endpoint: `https://${account.trim()}.r2.cloudflarestorage.com`, region: 'auto', cron: '0 3 * * *' })}>应用 R2 预设</Button>
             </div>
           ) : null}
-          <TextSetting label="Endpoint" value={config.endpoint} onChange={(endpoint) => set({ endpoint })} type="url" placeholder={config.provider === 'r2' ? 'https://<account>.r2.cloudflarestorage.com' : 'https://s3.us-east-1.amazonaws.com'} />
           <div className="grid gap-3 sm:grid-cols-2">
+            <TextSetting className="sm:col-span-2" label="Endpoint" value={config.endpoint} onChange={(endpoint) => set({ endpoint })} type="url" placeholder={config.provider === 'r2' ? 'https://<account>.r2.cloudflarestorage.com' : 'https://s3.us-east-1.amazonaws.com'} />
             <TextSetting label="Bucket" value={config.bucket} onChange={(bucket) => set({ bucket })} placeholder="group-monitor-backup" />
             <TextSetting label="Region" value={config.region} onChange={(region) => set({ region })} placeholder={config.provider === 'r2' ? 'auto' : 'us-east-1'} />
             <TextSetting label="Access Key ID" value={config.accessKey} onChange={(accessKey) => set({ accessKey })} type="password" />
@@ -99,24 +99,23 @@ export function BackupForm({ initial }: { initial: BackupConfig }) {
           <p className="text-xs text-muted">凭据留空保留原值，保存后不再回显。</p>
         </fieldset>
       </SectionCard>
-      <div className="flex min-w-0 flex-col gap-4">
-        <SectionCard title="备份计划" description="归档保留在本地，备份副本上传至存储桶。">
-          <fieldset disabled={saving || running} className="flex min-w-0 flex-col gap-4">
+        <SectionCard title="备份计划" description="定期上传归档副本，保留本地原件。">
+          <fieldset disabled={saving || running} className="flex min-w-0 flex-col gap-3">
             <Toggle label="启用定期备份" isSelected={config.enabled} onChange={(enabled) => set({ enabled })} isDisabled={saving || running} />
             <TextSetting label="Cron 周期" value={config.cron} onChange={(cron) => set({ cron })} placeholder="0 3 * * *" description="分 时 日 月 周；默认每天 03:00" />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <details className="text-sm">
+              <summary className="cursor-pointer text-muted">更多设置 <span className="ml-2 text-xs tabular-nums">{config.timeoutSec}s 超时</span></summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <TextSetting label="文件前缀" value={config.prefix} onChange={(prefix) => set({ prefix })} placeholder="group-monitor" />
               <NumberSetting label="备份超时（秒）" value={config.timeoutSec} onChange={(timeoutSec) => set({ timeoutSec })} minValue={1} maxValue={120} fullWidth />
-            </div>
-            <p className="text-xs text-muted">使用服务器时区；可在 Cron 前加 CRON_TZ=Asia/Shanghai。</p>
+              </div>
+              <p className="mt-2 text-xs text-muted">使用服务器时区；可在 Cron 前加 CRON_TZ=Asia/Shanghai。</p>
+            </details>
           </fieldset>
-        </SectionCard>
-        <Widget>
-          <Widget.Header>
-            <Widget.Title>运行状态</Widget.Title>
+          <div className="mb-3 mt-4 flex items-center justify-between gap-2 border-t border-separator pt-3">
+            <h3 className="text-sm font-medium">运行状态</h3>
             <IntentChip intent={status.data?.running ? 'primary' : config.enabled ? 'success' : 'default'}>{status.data?.running ? '备份中' : config.enabled ? '计划已启用' : '计划已关闭'}</IntentChip>
-          </Widget.Header>
-          <Widget.Content>
+          </div>
             <div aria-live="polite" className="flex flex-col gap-3">
               {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
               {message ? <p role="status" className="text-sm text-success">{message}</p> : null}
@@ -136,9 +135,7 @@ export function BackupForm({ initial }: { initial: BackupConfig }) {
                 <Button size="sm" variant="secondary" onPress={run} isPending={running} isDisabled={dirty || saving || !config.enabled || status.data?.running}>立即备份</Button>
               </div>
             </div>
-          </Widget.Content>
-        </Widget>
-      </div>
+        </SectionCard>
     </div>
   )
 }
