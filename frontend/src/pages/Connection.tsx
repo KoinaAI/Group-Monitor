@@ -1,6 +1,5 @@
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
-import { SectionCard } from '../components/ui/SectionCard'
 import { StatusDot } from '../components/ui/StatusDot'
 import { InlineError } from '../components/ui/States'
 import { Loader } from '../components/Loader'
@@ -22,35 +21,29 @@ export default function Connection() {
   return (
     <Page>
       <PageHeader title="连接" description="NapCat OneBot 连接配置" />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(15rem,0.6fr)_minmax(0,1.8fr)]">
-        <SectionCard title="连接状态" description="与 NapCat 的实时连接情况">
-          <div className="flex items-center gap-3">
-            <StatusDot tone={connected ? 'success' : 'danger'} pulse={connected} />
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-foreground">
-                {connected ? '已连接' : '未连接'}
-              </p>
-              {connected && (nickname || selfId) ? (
-                <p className="text-xs text-muted tabular-nums">
-                  {nickname ? `${nickname} · ` : ''}
-                  {selfId ?? ''}
-                </p>
-              ) : (
-                <p className="text-xs text-muted">检查 NapCat 是否在线以及端点配置是否正确</p>
-              )}
-            </div>
-          </div>
-        </SectionCard>
-        {loading || !config ? (
-          error ? (
-            <InlineError message={error} onRetry={reload} />
-          ) : (
-            <Loader label="正在加载配置…" />
-          )
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted" aria-label="连接状态">
+        <StatusDot tone={connected ? 'success' : 'danger'} pulse={connected} />
+        <span className="font-medium text-foreground">
+          {connected ? '已连接' : '未连接'}
+        </span>
+        {connected && (nickname || selfId) ? (
+          <span className="tabular-nums">
+            {nickname ? `${nickname} · ` : ''}
+            {selfId ?? ''}
+          </span>
         ) : (
-          <OneBotForm initial={config.onebot} />
+          <span>检查 NapCat 是否在线以及端点配置是否正确</span>
         )}
       </div>
+      {loading || !config ? (
+        error ? (
+          <InlineError message={error} onRetry={reload} />
+        ) : (
+          <Loader label="正在加载配置…" />
+        )
+      ) : (
+        <OneBotForm initial={config.onebot} />
+      )}
     </Page>
   )
 }
