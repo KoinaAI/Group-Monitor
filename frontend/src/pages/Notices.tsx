@@ -147,7 +147,7 @@ export default function Notices() {
               <Widget.Title>通知列表</Widget.Title>
               <Widget.Description>最近通知在前</Widget.Description>
             </Widget.Header>
-            <Widget.Content className="p-0">
+            <Widget.Content className="!p-0">
               <ListView
                 aria-label="通知归档列表"
                 variant="secondary"
@@ -166,7 +166,7 @@ export default function Notices() {
                         <span className="text-[11px] tabular-nums text-muted">{fmtDateTime(notice.createdAt)}</span>
                       </span>
                       <span className="flex max-w-full items-center gap-2"><IntentChip intent={urgencyIntent(notice.result.level)}>{urgencyLabel(notice.result.level)}</IntentChip><span className="truncate text-xs text-muted">{notice.group || `群 ${notice.groupId}`}</span></span>
-                      <ListView.Description className="mt-0 max-w-full">{notice.group || `群 ${notice.groupId}`}{notice.result.summary ? ` · ${notice.result.summary}` : ''}</ListView.Description>
+                      {notice.result.summary ? <ListView.Description className="mt-0 max-w-full">{notice.result.summary}</ListView.Description> : null}
                     </ListView.ItemContent>
                   </ListView.Item>
                 ))}
