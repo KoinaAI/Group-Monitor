@@ -26,7 +26,7 @@ export function EnableSetting({
         <span className="text-sm font-medium text-foreground">{label}</span>
         <Switch.Control><Switch.Thumb /></Switch.Control>
       </Switch.Content>
-      <Description className="max-w-none text-xs leading-5">{description}</Description>
+      <Description className="max-w-none text-xs leading-5" style={{ paddingInlineStart: 0 }}>{description}</Description>
     </Switch>
   )
 }
