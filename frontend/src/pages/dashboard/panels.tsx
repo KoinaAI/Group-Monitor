@@ -21,7 +21,7 @@ export function MessageFeed() {
         {messages.length === 0 ? (
           <div className="dashboard-empty"><AppIcon name="groups" className="size-5 shrink-0 text-muted" /><div><p>暂无消息</p><p className="mt-1 text-xs text-muted">监听中，等待群消息…</p></div></div>
         ) : (
-          <ScrollShadow className="max-h-[26rem] overflow-y-auto px-4">
+          <ScrollShadow className="max-h-72 overflow-y-auto px-4">
             <ul className="divide-y divide-border/60">
               {messages.map((m) => (
                 <li key={`${m.messageId}-${m.time}`} className="py-2.5 first:pt-1">
@@ -114,7 +114,7 @@ export function EscalationPanel() {
         {escalations.length === 0 ? (
           <div className="dashboard-empty"><AppIcon name="bell" className="size-5 shrink-0 text-accent" /><div><p>暂无升级事件</p><p className="mt-1 text-xs text-muted">重要消息通过判断后，将在这里汇总。</p></div></div>
         ) : (
-          <ScrollShadow className="max-h-[38rem] overflow-y-auto px-4">
+          <ScrollShadow className="max-h-96 overflow-y-auto px-4">
             <ul className="divide-y divide-border/60">
               {escalations.slice(0, 8).map((e, index) => (
                 <li key={`${e.ts}-${e.groupId}-${index}`} className="py-3 first:pt-1">
