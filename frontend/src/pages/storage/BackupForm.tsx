@@ -106,7 +106,7 @@ export function BackupForm({ initial }: { initial: BackupConfig }) {
             <TextSetting label="Cron 周期" value={config.cron} onChange={(cron) => set({ cron })} placeholder="0 3 * * *" description="分 时 日 月 周；默认每天 03:00" />
             <div className="grid gap-3 sm:grid-cols-2">
               <TextSetting label="文件前缀" value={config.prefix} onChange={(prefix) => set({ prefix })} placeholder="group-monitor" />
-              <NumberSetting label="备份超时（秒）" value={config.timeoutSec} onChange={(timeoutSec) => set({ timeoutSec })} minValue={1} maxValue={120} />
+              <NumberSetting label="备份超时（秒）" value={config.timeoutSec} onChange={(timeoutSec) => set({ timeoutSec })} minValue={1} maxValue={120} fullWidth />
             </div>
             <p className="text-xs text-muted">使用服务器时区；可在 Cron 前加 CRON_TZ=Asia/Shanghai。</p>
           </fieldset>

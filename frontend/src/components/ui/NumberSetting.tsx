@@ -15,6 +15,7 @@ export function NumberSetting({
   step = 1,
   formatOptions,
   isDisabled,
+  fullWidth = false,
   className,
 }: {
   label: ReactNode
@@ -26,12 +27,14 @@ export function NumberSetting({
   step?: number
   formatOptions?: Intl.NumberFormatOptions
   isDisabled?: boolean
+  /** Stretch the stepper to its grid cell when it sits beside text inputs. */
+  fullWidth?: boolean
   className?: string
 }) {
   return (
     <NumberField
       variant="secondary"
-      className={cn('flex min-w-0 flex-col gap-1', className)}
+      className={cn('flex min-w-0 flex-col gap-1.5', className)}
       value={value}
       onChange={(v) => onChange(typeof v === 'number' && Number.isFinite(v) ? v : 0)}
       minValue={minValue}
@@ -41,9 +44,9 @@ export function NumberSetting({
       isDisabled={isDisabled}
     >
       <Label>{label}</Label>
-      <NumberField.Group className="h-9 w-fit min-w-36 max-w-48">
+      <NumberField.Group className={cn('h-[38px] min-w-36', fullWidth ? 'w-full max-w-none' : 'w-fit max-w-48')}>
         <NumberField.DecrementButton className="w-9" />
-        <NumberField.Input className="w-16 px-2 text-center" />
+        <NumberField.Input className={cn('px-2 text-center', fullWidth ? 'min-w-0 flex-1' : 'w-16')} />
         <NumberField.IncrementButton className="w-9" />
       </NumberField.Group>
       {description ? <Description className="text-xs leading-5">{description}</Description> : null}
