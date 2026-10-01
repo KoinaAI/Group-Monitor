@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@heroui/react'
 import { KPIGroup, Widget } from '@heroui-pro/react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
 import { Stat } from '../components/ui/Stat'
@@ -22,7 +22,6 @@ export default function Dashboard() {
   const { data: sys, error, reload } = useApi(api.status, [])
   const navigate = useNavigate()
   const live = useLive((s) => s.status)
-  const streamConnected = useLive((s) => s.connected)
   const [enabledLocal, setEnabledLocal] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
   const [toggleError, setToggleError] = useState('')
@@ -51,15 +50,12 @@ export default function Dashboard() {
   }
 
   return (
-    <Page className="dashboard-page space-y-3">
+    <Page className="dashboard-page">
       <PageHeader
         title="总览"
         description="关注待办通知，掌握群消息处理进度。"
         actions={
           <>
-            <IntentChip intent={streamConnected ? 'success' : 'warning'}>
-              {streamConnected ? '实时同步' : '正在重连'}
-            </IntentChip>
             <Toggle
               label={enabled ? '运行中' : '已暂停'}
               isSelected={enabled}
@@ -71,7 +67,7 @@ export default function Dashboard() {
       />
       {error ? <InlineError message={error} onRetry={reload} /> : null}
       {toggleError ? <InlineError message={toggleError} /> : null}
-      <KPIGroup className="!grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <KPIGroup className="!grid grid-cols-2 lg:grid-cols-4">
         <Stat
           label="NapCat"
           value={connected ? '已连接' : '未连接'}
@@ -83,41 +79,38 @@ export default function Dashboard() {
         <Stat label="静默窗口" value={`${quiet}s`} icon="clock" tone="default" />
       </KPIGroup>
 
-      <Widget>
-        <Widget.Content className="!px-4 !py-3 sm:!px-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
-                <AppIcon name="rules" className="size-4" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold">处理策略</p>
-                <p className="mt-0.5 truncate text-xs text-muted">消息聚合 → 重要性判断 → 通知推送</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <IntentChip intent={jev ? 'primary' : 'default'}>Jev {jev ? '启用' : '关闭'}</IntentChip>
-              <IntentChip intent={llm ? 'primary' : 'default'}>LLM {llm ? '启用' : '关闭'}</IntentChip>
-              <Button variant="ghost" size="sm" onPress={() => navigate('/rules')}>调整规则</Button>
-            </div>
-          </div>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            {['聚合消息', '判断重要性', '发送通知'].map((label, index) => (
-              <div key={label} className="flex items-center gap-2 rounded-lg bg-surface-secondary/70 px-3 py-2 text-xs text-muted">
-                <span className={`grid size-5 place-items-center rounded-full text-[10px] font-semibold ${index === 1 && jev ? 'bg-accent text-accent-foreground' : 'bg-default text-foreground'}`}>{index + 1}</span>
-                <span className="truncate">{label}</span>
-                {index < 2 ? <span className="ml-auto hidden text-separator sm:inline">→</span> : null}
-              </div>
-            ))}
-          </div>
-        </Widget.Content>
-      </Widget>
-
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(19rem,1fr)]">
-        <EscalationPanel />
+      <div className="dashboard-strategy my-4">
+        <AppIcon name="rules" className="size-4 shrink-0 text-accent" />
+        <p className="text-xs text-muted">聚合消息 <span className="mx-1">→</span> 判断重要性 <span className="mx-1">→</span> 推送通知</p>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <IntentChip intent={jev ? 'primary' : 'default'}>Jev {jev ? '启用' : '关闭'}</IntentChip>
+          <IntentChip intent={llm ? 'primary' : 'default'}>LLM {llm ? '启用' : '关闭'}</IntentChip>
+          <Button variant="ghost" size="sm" onPress={() => navigate('/rules')}>调整规则</Button>
+        </div>
+      </div>
+      <div className="dashboard-main">
+        <div className="min-w-0">
+          <EscalationPanel />
+          <div className="dashboard-feed"><MessageFeed /></div>
+        </div>
         <div className="grid min-w-0 gap-4">
           <BufferPanel />
-          <MessageFeed />
+          <Widget>
+            <Widget.Header><Widget.Title>工作空间</Widget.Title><Widget.Description>常用管理</Widget.Description></Widget.Header>
+            <Widget.Content>
+              <div className="dashboard-shortcuts">
+                {[
+                  { to: '/groups', icon: 'groups' as const, title: '监听范围', description: '选择关注的群组，查看原始消息' },
+                  { to: '/notifications', icon: 'send' as const, title: '通知通道', description: '管理 ntfy 与 Bark 推送目标' },
+                  { to: '/intelligence', icon: 'intelligence' as const, title: '智能处理', description: '配置模型、意图判断和附件阅读' },
+                ].map((item) => <Link key={item.to} to={item.to} className="dashboard-shortcut">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-secondary text-accent"><AppIcon name={item.icon} className="size-4" /></span>
+                  <span className="min-w-0 flex-1"><span className="block text-xs font-medium text-foreground">{item.title}</span><span className="mt-0.5 block text-[11px] text-muted">{item.description}</span></span>
+                  <AppIcon name="chevronRight" className="size-3 shrink-0 text-muted" />
+                </Link>)}
+              </div>
+            </Widget.Content>
+          </Widget>
         </div>
       </div>
     </Page>

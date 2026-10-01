@@ -28,19 +28,19 @@ export function Stat({
 }) {
   return (
     <KPI className="min-w-0">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs text-muted">{label}</p>
+          <p className="mt-1 text-xl font-semibold leading-tight tabular-nums tracking-tight text-foreground">{value}</p>
+          {hint ? <p className="mt-1 truncate text-xs text-muted">{hint}</p> : null}
+        </div>
         <div
           className={cn(
-            'grid size-9 shrink-0 place-items-center rounded-xl',
+            'grid size-8 shrink-0 place-items-center rounded-lg',
             iconTone[tone],
           )}
         >
-          <AppIcon name={icon} className="size-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-xs text-muted">{label}</p>
-          <p className="text-lg font-semibold tabular-nums text-foreground sm:text-xl">{value}</p>
-          {hint ? <p className="truncate text-xs text-muted">{hint}</p> : null}
+          <AppIcon name={icon} className="size-4" />
         </div>
       </div>
     </KPI>
