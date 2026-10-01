@@ -24,7 +24,7 @@ Vite 默认监听 5173，将 `/api` 转发到 `127.0.0.1:8787`。现有安装已
 
 布局使用 Pro AppLayout、Navbar、Sidebar、KPI / KPIGroup、Widget、ListView、ActionBar、Segment、Stepper、NativeSelect、CheckboxButtonGroup、CodeBlock 与 EmptyState。API 请求和账号范围由 `src/lib/api.ts`、`src/lib/accounts.ts` 统一管理。
 
-界面使用原有 HeroUI Pro Glass 主题的透明玻璃、配色与圆角，底层铺设纯色 SVG 线稿壁纸。`public/backgrounds/workspace-pattern-light.svg` 与 `workspace-pattern-dark.svg` 是 480px 的重复单元，分别用于明暗模式；同一套纸飞机、对话框、星球等单色图形保持位置一致，切换主题时不会跳动。Widget 保留灰色玻璃外框和内嵌内容卡片，标题区最小高度为 40px。首屏脚本和主题切换同步应用 `glass-light` / `glass-dark`，与持久化偏好保持一致。
+界面使用原有 HeroUI Pro Glass 主题的透明玻璃、配色与圆角，底层铺设纯色 SVG 线稿壁纸。`public/backgrounds/workspace-pattern-light.svg` 与 `workspace-pattern-dark.svg` 是 600px 的重复单元，包含 30 种不规则错位排列的图形；边缘图形在相邻单元衔接，两种主题保持相同布局。纸飞机使用清晰的单折线，星球环区分前后遮挡，图形大小变化时仍保持一致线宽。Widget 保留灰色玻璃外框和内嵌内容卡片，标题区最小高度为 40px。首屏脚本和主题切换同步应用 `glass-light` / `glass-dark`，与持久化偏好保持一致。
 
 总览恢复原有布局：处理策略在上方，最新通知在左，待发送窗口与实时消息在右；空状态按内容收缩，活跃消息流在面板内滚动。归档采用紧凑检索工具栏与列表 / 详情布局，手机上收起为单列。群组、主人和规则的统计放在行内摘要中。
 
