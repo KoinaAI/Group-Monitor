@@ -20,6 +20,7 @@ const browser = await chromium.launch({ headless: true })
 const errors = [], failed = []
 const screenshots = []
 let authScene = 'protected'
+let activityScene = 'normal'
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 960 } })
   await context.addInitScript(() => { localStorage.setItem('xunshu-account', 'school'); if (!localStorage.getItem('nap-theme')) localStorage.setItem('nap-theme', 'light') })
@@ -35,14 +36,14 @@ try {
       '/api/status': status, '/api/config': config, '/api/groups': groups, '/api/masters': masters,
       '/api/notifications': targets, '/api/agent-keys': [{ id: 'agent', name: '个人助理', accountIds: ['school'], createdAt: now }],
       '/api/notices': notices, '/api/logs': logs,
-      '/api/escalations': [{ ...notices[0].result, ts: now, groupId: 42, group: '产品与项目协作', notified: true, urgent: true }],
+      '/api/escalations': activityScene === 'empty' ? [] : Array.from({ length: activityScene === 'busy' ? 8 : 1 }, (_, i) => ({ ...notices[i % notices.length].result, ts: now - i * 60000, groupId: 42, group: '产品与项目协作', notified: true, urgent: i === 0 })),
       '/api/backup/status': { running: false, lastRun: now, lastSuccess: now, lastError: '', filesUploaded: 12 },
       '/api/groups/history': [{ messageId: 1, messageSeq: 1, userId: 10001, nickname: '小林', role: 'admin', time: now / 1000, text: '请大家提前准备项目评审材料，谢谢。', isSelf: false }],
     }
     if (path === '/api/events') return route.fulfill({ contentType: 'text/event-stream', body: [
       { type: 'hello', data: status },
-      { type: 'message', data: { groupId: 42, groupName: '产品与项目协作', userId: 10001, nickname: '小林', role: 'admin', text: '请大家提前准备项目评审材料，谢谢。', messageId: 1, time: now / 1000 } },
-      { type: 'buffer', data: [{ groupId: 42, groupName: '产品与项目协作', count: 3, flushAt: now + 120000, windowMs: 120000, topLabel: '管理员' }] },
+      ...Array.from({ length: activityScene === 'empty' ? 0 : activityScene === 'busy' ? 20 : 1 }, (_, i) => ({ type: 'message', data: { groupId: 42, groupName: '产品与项目协作', userId: 10001 + i, nickname: ['小林', '陈同学', '项目助理'][i % 3], role: i % 3 === 0 ? 'admin' : 'member', text: '请大家提前准备项目评审材料，谢谢。', messageId: i + 1, time: now / 1000 - (activityScene === 'busy' ? 19 - i : 0) * 30 } })),
+      { type: 'buffer', data: activityScene === 'empty' ? [] : groups.slice(0, activityScene === 'busy' ? 3 : 1).map((group) => ({ groupId: group.groupId, groupName: group.groupName, count: 3, flushAt: now + 120000, windowMs: 120000, topLabel: '管理员' })) },
     ].map((event) => `data: ${JSON.stringify(event)}\n\n`).join('') })
     assert(path in fixtures, `Unexpected endpoint ${path}`)
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(fixtures[path]) })
@@ -113,6 +114,11 @@ try {
       await page.locator('h1').first().waitFor()
       await page.waitForTimeout(120)
       if (width === 1440 && route === '/') await assertSurface('dark')
+      const overflow = await page.evaluate(() => {
+        const root = document.querySelector('.app-layout__main')
+        return document.documentElement.scrollWidth > innerWidth + 1 || (root && root.scrollWidth > root.clientWidth + 1)
+      })
+      if (overflow) failed.push(`${width}px dark ${route} overflows horizontally`)
       const name = route === '/' ? 'overview' : route.slice(1).replaceAll('/', '-')
       await capture(name, width, 'dark', `${width}-dark-${name}.png`)
     }
@@ -142,6 +148,30 @@ try {
   await page.getByRole('heading', { name: '规则', exact: true }).waitFor()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
 
+  // Empty and active workspaces must size to content, while long feeds stay
+  // scrollable instead of pushing every management action far down the page.
+  for (const scene of ['empty', 'busy']) {
+    activityScene = scene
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate((value) => localStorage.setItem('nap-theme', value), theme)
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 960 })
+        await page.goto(base + '/')
+        if (scene === 'empty') await page.getByText('暂无升级事件', { exact: true }).waitFor()
+        else await page.getByText('最近 20 条', { exact: true }).waitFor()
+        const feed = await page.locator('.dashboard-feed').boundingBox()
+        assert(feed.height < (scene === 'empty' ? 150 : 350), `${scene} message feed should stay compact`)
+        if (scene === 'busy') {
+          const scrollable = await page.locator('.dashboard-feed .overflow-y-auto').evaluate((node) => node.scrollHeight > node.clientHeight)
+          assert(scrollable, 'An active message feed should scroll')
+        }
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${scene} ${theme} ${width}px should fit`)
+        await capture(`overview-${scene}`, width, theme, `${width}-${theme}-overview-${scene}.png`)
+      }
+    }
+  }
+  activityScene = 'normal'
+
   for (const scene of ['login', 'setup']) {
     authScene = scene
     for (const theme of ['light', 'dark']) {
@@ -165,7 +195,7 @@ try {
     overview: '总览', groups: '群组', notices: '通知记录', logs: '运行日志', notifications: '广播通知',
     masters: '主人', rules: '规则', intelligence: '智能', sources: '信息源', agents: 'Agent 接入',
     storage: '存储', connection: '连接', 'groups-42-history': '群历史', login: '登录', setup: '初始化',
-    'sidebar-collapsed': '收起侧栏', 'desktop-dark': '暗色交互',
+    'sidebar-collapsed': '收起侧栏', 'desktop-dark': '暗色交互', 'overview-empty': '总览 · 等待消息', 'overview-busy': '总览 · 活跃消息',
   }
   const sections = [...new Set(screenshots.map((shot) => shot.name))].map((name) => {
     const tiles = screenshots.filter((shot) => shot.name === name).map(({ width, theme, file }) => `
@@ -179,6 +209,6 @@ try {
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>讯枢页面截图</title>
 <style>body{margin:0;background:#f5f6f7;color:#1f252c;font:14px/1.5 system-ui,-apple-system,sans-serif}main{max-width:1440px;margin:auto;padding:24px}h1{font-size:24px;margin:0 0 4px}p{color:#5b6570;margin:0 0 28px}section{margin:0 0 32px}h2{font-size:17px;margin:0 0 12px}.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:12px}.shot{display:block;min-width:0;overflow:hidden;border:1px solid #dce1e5;border-radius:6px;background:white;color:inherit;text-decoration:none}.shot span{display:block;padding:8px 12px;border-bottom:1px solid #e8ecef;font-weight:600}.shot img{display:block;width:100%;height:300px;object-fit:contain;object-position:top;background:#eef0f2}@media(max-width:640px){main{padding:16px}.shot img{height:240px}}</style>
 </head><body><main><h1>讯枢页面截图</h1><p>${screenshots.length} 张整页截图。点击缩略图查看原图。</p>${sections}</main></body></html>`)
-  console.log('PASS 13 protected routes at desktop/tablet/mobile plus login and setup in both themes, compact cards, command search, contextual tabs, mobile navigation, theme and sidebar')
+  console.log('PASS 13 protected routes at desktop/tablet/mobile plus login and setup, both themes, empty/busy feed density, compact cards, command search, contextual tabs, mobile navigation, theme and sidebar')
   console.log(`Screenshots: ${out}/index.html (${screenshots.length} full-page images)`)
 } finally { await browser.close() }

@@ -77,6 +77,10 @@ try {
   await page.getByText('备份已完成', { exact: true }).waitFor()
 
   await page.goto(`${base}/intelligence`)
+  await page.locator('summary').filter({ hasText: '解析限制' }).click()
+  assert.equal(Number((await page.getByRole('textbox', { name: '正文字符上限', exact: true }).inputValue()).replaceAll(',', '')), documents.maxTextChars, 'Stored text limit must display without step rounding')
+  await page.locator('summary').filter({ hasText: '判定参数' }).click()
+  assert.equal(Number(await page.getByRole('textbox', { name: '阈值', exact: true }).inputValue()), config.jev.threshold, 'Advanced gate settings should remain accessible')
   await page.getByLabel('MinerU API Key', { exact: true }).fill('test-mineru-key')
   await page.getByText('读取通知附件', { exact: true }).click()
   await page.getByRole('button', { name: '保存更改', exact: true }).click()
