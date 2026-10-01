@@ -65,19 +65,35 @@ try {
   const assertSurface = async (theme) => {
     const result = await page.evaluate(() => {
       const root = document.documentElement
+      const header = document.querySelector('.widget__header')
+      const widget = header.closest('.widget')
+      const content = widget.querySelector('.widget__content')
+      const title = header.querySelector('.widget__title')
+      const headerBox = header.getBoundingClientRect()
+      const titleBox = title.getBoundingClientRect()
       return {
-        classes: root.className,
-        surface: getComputedStyle(root).getPropertyValue('--surface').trim(),
-        widgetBackground: getComputedStyle(document.querySelector('.widget')).backgroundColor,
-        contentBackground: getComputedStyle(document.querySelector('.widget__content')).backgroundColor,
-        contentShadow: getComputedStyle(document.querySelector('.widget__content')).boxShadow,
+        dark: root.classList.contains('dark'),
+        glassLight: root.classList.contains('glass-light'),
+        glassDark: root.classList.contains('glass-dark'),
+        widgetBackground: getComputedStyle(widget).backgroundColor,
+        contentBackground: getComputedStyle(content).backgroundColor,
+        widgetRadius: parseFloat(getComputedStyle(widget).borderRadius),
+        contentRadius: parseFloat(getComputedStyle(content).borderRadius),
+        blur: getComputedStyle(widget).backdropFilter,
+        headerHeight: headerBox.height,
+        aboveTitle: titleBox.top - headerBox.top,
+        belowTitle: headerBox.bottom - titleBox.bottom,
       }
     })
-    assert.equal(result.classes.includes('dark'), theme === 'dark', 'Saved color preference should apply before rendering')
-    assert.match(result.surface, /oklch/)
-    assert.notEqual(result.widgetBackground, 'rgba(0, 0, 0, 0)', 'Panels need a readable surface')
-    assert.equal(result.contentBackground, 'rgba(0, 0, 0, 0)', 'Widget content should share its parent surface')
-    assert.equal(result.contentShadow, 'none', 'Widget content should not create a nested card')
+    assert.equal(result.dark, theme === 'dark', 'Saved color preference should apply before rendering')
+    assert.equal(result.glassLight, theme === 'light', 'Light mode should retain the original Glass theme')
+    assert.equal(result.glassDark, theme === 'dark', 'Dark mode should retain the original Glass theme')
+    assert.notEqual(result.widgetBackground, result.contentBackground, 'Preserve the glass frame and distinct inset content surface')
+    assert.notEqual(result.contentBackground, 'rgba(0, 0, 0, 0)', 'The original inner card should remain visible')
+    assert(result.widgetRadius > result.contentRadius && result.contentRadius >= 12, 'Preserve the original nested rounded corners')
+    assert.match(result.blur, /blur\(/, 'Preserve the original glass blur')
+    assert(result.headerHeight <= 42, 'The title band should lose the excessive vertical whitespace')
+    assert(result.aboveTitle <= 12 && result.belowTitle <= 12, 'Title whitespace should stay balanced and compact')
   }
   const routes = ['/', '/groups', '/notices', '/logs', '/notifications', '/masters', '/rules', '/intelligence', '/sources', '/agents', '/storage', '/connection', '/groups/42/history']
   for (const width of [1440, 768, 390]) {
