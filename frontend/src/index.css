@@ -10,6 +10,15 @@
    <html> element itself and everything under it. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --workspace-wallpaper: url("/backgrounds/workspace-pattern-light.svg");
+  --workspace-wallpaper-color: #edf1f4;
+}
+:root.dark {
+  --workspace-wallpaper: url("/backgrounds/workspace-pattern-dark.svg");
+  --workspace-wallpaper-color: #17212b;
+}
+
 html,
 body,
 #root {
@@ -18,11 +27,10 @@ body,
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 80% -12%, color-mix(in oklab, var(--accent) 10%, transparent), transparent 32%),
-    radial-gradient(circle at 18% 18%, color-mix(in oklab, var(--foreground) 3%, transparent), transparent 28%),
-    var(--background-gradient),
-    var(--background, Canvas);
+  background-color: var(--workspace-wallpaper-color);
+  background-image: var(--workspace-wallpaper);
+  background-repeat: repeat;
+  background-size: 480px 480px;
   background-attachment: fixed;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -50,7 +58,7 @@ body {
 .workspace-shell .app-layout__toolbar { position: relative; top: auto; }
 .workspace-shell .app-layout__main {
   scroll-padding-top: 1.5rem;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--surface-secondary) 56%, transparent), transparent 42%);
+  background: transparent;
 }
 .workspace-shell [data-slot="sidebar"],
 .workspace-shell .app-layout__header,
