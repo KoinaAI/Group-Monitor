@@ -36,25 +36,33 @@ export function SkillInstall() {
       setFeedback('请复制已选中的安装命令')
     }
   }
-  return <SectionCard title="安装 Skill" description="让 Agent 直接通过 API 查询讯枢，无需配置 MCP。">
+  return <SectionCard title="安装 Skill" description="让 Agent 通过 API 查询讯枢">
     <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
       <Segment aria-label="安装到" className="self-start" selectedKey={target} onSelectionChange={(key) => {
         if (key === 'codex' || key === 'claude') { setTarget(key); setFeedback('') }
       }}>
         {Object.entries(targets).map(([id, item]) => <Segment.Item key={id} id={id}>{item.label}</Segment.Item>)}
       </Segment>
-      <p className="text-xs leading-5 text-muted">在 Agent 运行环境执行，需要 Python 3 和 curl。<br />安装到 <code className="break-all text-foreground">{targets[target].directory}</code>。</p>
+      <code className="min-w-0 break-all text-xs text-muted">{targets[target].directory}</code>
+      </div>
+      <p className="text-xs text-muted">在 Agent 运行环境执行，需要 Python 3 和 curl。</p>
       <CodeBlock className="min-w-0">
-        <CodeBlock.Header><span className="text-xs text-muted">终端</span></CodeBlock.Header>
-        <textarea ref={commandRef} aria-label="Skill 安装命令" readOnly spellCheck={false} value={command} rows={4} className="block w-full resize-none bg-transparent px-3 py-2 font-mono text-xs leading-6 outline-offset-2" />
+        <textarea ref={commandRef} aria-label="Skill 安装命令" readOnly spellCheck={false} value={command} rows={4} className="block h-[104px] w-full resize-none bg-transparent px-3 py-3 font-mono text-xs leading-5 outline-offset-2 sm:h-[84px]" />
       </CodeBlock>
       <div className="flex flex-wrap items-center gap-3">
-        <Button onPress={copy}>复制安装命令</Button>
+        <Button size="sm" onPress={copy}>复制安装命令</Button>
         <a href="/skills/xunshu-api.zip" download="xunshu-api.zip" className="text-sm text-accent hover:underline">下载 Skill ZIP</a>
         <a href="/skills/xunshu-api/SKILL.md" target="_blank" rel="noreferrer" className="text-sm text-muted hover:underline">查看 Skill</a>
       </div>
       {feedback && <p role="status" className="text-sm text-muted">{feedback}</p>}
-      <p className="text-xs leading-5 text-muted">安装后重新打开 Agent，设置 <code>XUNSHU_URL</code> 为 <code className="break-all">{location.origin}</code>，<code>XUNSHU_API_KEY</code> 使用创建的密钥。安装包不包含密钥。</p>
+      <div className="grid gap-1 text-xs text-muted">
+        <p>安装后重新打开 Agent，并设置：</p>
+        <dl className="grid min-w-0 grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+          <dt className="font-mono">XUNSHU_URL</dt><dd className="break-all font-mono text-foreground">{location.origin}</dd>
+          <dt className="font-mono">XUNSHU_API_KEY</dt><dd>创建的密钥 · 安装包不包含密钥</dd>
+        </dl>
+      </div>
       <details className="text-sm">
         <summary className="cursor-pointer text-muted">手动安装与更新</summary>
         <p className="mt-2 leading-relaxed text-muted">也可下载 ZIP，将其中的 <code>xunshu-api</code> 文件夹放入 Agent 的 skills 目录。其他支持 SKILL.md 的 Agent 可按其安装方式导入。已有安装不会自动覆盖；更新时先将原文件夹改名备份，再执行安装命令。</p>
