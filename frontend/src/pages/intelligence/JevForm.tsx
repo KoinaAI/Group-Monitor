@@ -65,7 +65,7 @@ export function JevForm({ initial }: { initial: JevConfig }) {
   return (
     <SectionCard
       title="Jev 意图门控"
-      description="逐条预筛消息，并在归档前确认正式通知；判定失败时不写入归档"
+      description="预筛消息，在归档前确认通知意图"
       className="min-w-0"
       actions={
         <Button size="sm" variant="secondary" onPress={test} isPending={testing} isDisabled={busy}>
@@ -73,26 +73,26 @@ export function JevForm({ initial }: { initial: JevConfig }) {
         </Button>
       }
       footer={
-        <div className="flex w-full flex-wrap items-center gap-2">
+        dirty || message ? <div className="flex w-full flex-wrap items-center gap-2">
           {dirty ? (
             <Button size="sm" onPress={save} isPending={saving} isDisabled={busy}>
               保存更改
             </Button>
           ) : null}
           <span role="status" className="text-xs text-success">{message}</span>
-        </div>
+        </div> : undefined
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <EnableSetting
           label="启用意图门控"
-          description="关闭或未配置密钥时可继续推送，但暂停通知归档"
+          description="关闭或未配置密钥时继续推送，暂停通知归档。"
           isSelected={jev.enabled}
           onChange={(v) => set({ enabled: v })}
           isDisabled={busy}
         />
         <fieldset disabled={busy} className="grid min-w-0 gap-3">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <TextSetting
               label="Base URL"
               value={jev.baseUrl}
@@ -115,7 +115,11 @@ export function JevForm({ initial }: { initial: JevConfig }) {
             placeholder="sk-…"
             type="password"
           />
-          <div className="grid gap-4 sm:grid-cols-3">
+          <details className="group text-sm">
+            <summary className="cursor-pointer text-muted marker:text-muted">
+              判定参数 <span className="ml-2 text-xs tabular-nums">阈值 {jev.threshold.toFixed(2)} · {jev.contextN} 条上下文 · {jev.timeoutSec}s 超时</span>
+            </summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
             <NumberSetting
               label="阈值"
               description="noul 高于阈值才升级"
@@ -140,7 +144,8 @@ export function JevForm({ initial }: { initial: JevConfig }) {
               minValue={1}
               maxValue={120}
             />
-          </div>
+            </div>
+          </details>
         </fieldset>
         {error ? <p role="alert" className="text-sm text-danger">{error}</p> : null}
         {res ? (

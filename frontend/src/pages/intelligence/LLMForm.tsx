@@ -66,7 +66,7 @@ export function LLMForm({ initial }: { initial: LLMConfig }) {
   return (
     <SectionCard
       title="LLM 蒸馏"
-      description="将聚合消息压缩为结构化摘要后再推送；采样参数由服务商决定"
+      description="将聚合消息提炼为结构化通知"
       className="min-w-0"
       actions={
         <Button size="sm" variant="secondary" onPress={test} isPending={testing} isDisabled={busy}>
@@ -74,26 +74,26 @@ export function LLMForm({ initial }: { initial: LLMConfig }) {
         </Button>
       }
       footer={
-        <div className="flex w-full flex-wrap items-center gap-2">
+        dirty || message ? <div className="flex w-full flex-wrap items-center gap-2">
           {dirty ? (
             <Button size="sm" onPress={save} isPending={saving} isDisabled={busy}>
               保存更改
             </Button>
           ) : null}
           <span role="status" className="text-xs text-success">{message}</span>
-        </div>
+        </div> : undefined
       }
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3">
         <EnableSetting
           label="启用 LLM 蒸馏"
-          description="关闭后仅推送紧急原文；正式通知仍可经 Jev 判断后归档"
+          description="关闭后推送紧急原文，通知仍可经 Jev 判断后归档。"
           isSelected={llm.enabled}
           onChange={(v) => set({ enabled: v })}
           isDisabled={busy}
         />
         <fieldset disabled={busy} className="grid min-w-0 gap-3">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
             <TextSetting
               label="Base URL"
               value={llm.baseUrl}

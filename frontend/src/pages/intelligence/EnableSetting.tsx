@@ -1,5 +1,4 @@
-import { Description } from '@heroui/react'
-import { CellSwitch } from '@heroui-pro/react'
+import { Description, Switch } from '@heroui/react'
 
 export function EnableSetting({
   label,
@@ -15,19 +14,19 @@ export function EnableSetting({
   onChange: (enabled: boolean) => void
 }) {
   return (
-    <CellSwitch
+    <Switch
       aria-label={label}
       isSelected={isSelected}
       isDisabled={isDisabled}
       onChange={onChange}
-      variant="secondary"
-      className="w-full gap-1 bg-transparent shadow-none"
+      size="sm"
+      className="w-full gap-1"
     >
-      <CellSwitch.Trigger className="w-full justify-between rounded-none bg-transparent px-0 shadow-none">
-        <CellSwitch.Label>{label}</CellSwitch.Label>
-        <CellSwitch.Control />
-      </CellSwitch.Trigger>
-      <Description className="max-w-none text-xs leading-relaxed">{description}</Description>
-    </CellSwitch>
+      <Switch.Content className="w-full justify-between gap-3">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <Switch.Control><Switch.Thumb /></Switch.Control>
+      </Switch.Content>
+      <Description className="max-w-none text-xs leading-5">{description}</Description>
+    </Switch>
   )
 }
