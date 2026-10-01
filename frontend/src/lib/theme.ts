@@ -27,11 +27,13 @@ export function resolveTheme(pref: ThemePref): 'light' | 'dark' {
   return pref
 }
 
-// Share the resolved mode with HeroUI and the workspace palette.
+// Keep HeroUI's base dark tokens and Pro's Glass tokens in sync.
 export function applyTheme(pref: ThemePref): void {
   const resolved = resolveTheme(pref)
   const root = document.documentElement
   root.classList.toggle('dark', resolved === 'dark')
+  root.classList.toggle('glass-light', resolved === 'light')
+  root.classList.toggle('glass-dark', resolved === 'dark')
   root.style.colorScheme = resolved
 }
 
