@@ -7,7 +7,6 @@ import { InlineError } from '../components/ui/States'
 import { Loader } from '../components/Loader'
 import { Toggle } from '../components/ui/Toggle'
 import { NumberSetting } from '../components/ui/NumberSetting'
-import { AppIcon } from '../lib/icons'
 import { api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import type { Rules as RulesConfig } from '../lib/types'
@@ -75,12 +74,21 @@ export default function Rules() {
         )
       ) : (
         <>
-        <fieldset disabled={saving} className="grid min-w-0 items-start gap-3 lg:grid-cols-2">
-          <SectionCard title="静默窗口" description="窗口内的消息合并为一次升级推送">
-            <div className="grid gap-3 sm:grid-cols-2">
+        <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted" aria-label="当前策略摘要">
+          <span className="tabular-nums"><span className="font-medium text-foreground">{rules.quietWindowSec}s</span> 聚合窗口</span>
+          <span className="tabular-nums">最长保持 {rules.maxHoldSec}s</span>
+          <span className="tabular-nums">{rules.urgentKeywords.length} 个紧急关键词</span>
+          <span className="tabular-nums">{rules.senderOverrides.length} 个发送者覆盖</span>
+        </div>
+        <fieldset disabled={saving} className="grid min-w-0 items-start gap-4">
+          <SectionCard title="消息聚合与升级" description="合并连续消息，优先推送紧急通知">
+          <div className="grid items-start gap-5 lg:grid-cols-2 lg:gap-8">
+            <div className="grid gap-3">
+              <h3 className="text-sm font-medium text-foreground">静默窗口</h3>
+              <div className="grid gap-3 sm:grid-cols-[max-content_max-content] sm:gap-x-6">
               <NumberSetting
                 label="静默窗口（秒）"
-                description="收到首条消息后等待更多消息的时长"
+                description="首条消息后的聚合等待时间"
                 value={rules.quietWindowSec}
                 onChange={(v) => patch({ quietWindowSec: v })}
                 minValue={0}
@@ -89,17 +97,17 @@ export default function Rules() {
               />
               <NumberSetting
                 label="最大保持（秒）"
-                description="窗口最长不超过此时长即强制发送"
+                description="超过此时长强制发送"
                 value={rules.maxHoldSec}
                 onChange={(v) => patch({ maxHoldSec: v })}
                 minValue={0}
                 maxValue={7200}
                 step={30}
               />
+              </div>
             </div>
-          </SectionCard>
-          <SectionCard title="升级判定" description="满足条件的消息判定为紧急">
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3">
+              <h3 className="text-sm font-medium text-foreground">升级判定</h3>
               <Toggle
                 label="@全体成员视为紧急"
                 description="收到 @全体 时立即升级并绕过静默窗口"
@@ -113,7 +121,9 @@ export default function Rules() {
                 onChange={(v) => patch({ elevateOwnerAdmin: v })}
               />
             </div>
+          </div>
           </SectionCard>
+          <div className="grid min-w-0 items-start gap-4 lg:grid-cols-2">
           <SectionCard
             title="紧急关键词"
             description="命中任一关键词即判定为紧急"
@@ -132,17 +142,8 @@ export default function Rules() {
               onChange={(v) => patch({ senderOverrides: v })}
             />
           </SectionCard>
-        </fieldset>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-separator/70 bg-surface/70 px-4 py-3 text-xs">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><AppIcon name="rules" className="size-4" /></span>
-            <div className="min-w-0">
-              <p className="font-medium text-foreground">当前策略摘要</p>
-              <p className="truncate text-muted">{rules.quietWindowSec}s 聚合窗口 · 最长保持 {rules.maxHoldSec}s · {rules.urgentKeywords.length} 个紧急关键词</p>
-            </div>
           </div>
-          <span className="shrink-0 tabular-nums text-muted">{rules.senderOverrides.length} 个发送者覆盖</span>
-        </div>
+        </fieldset>
         </>
       )}
     </Page>
