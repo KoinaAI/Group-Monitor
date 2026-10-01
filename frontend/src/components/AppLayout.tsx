@@ -27,13 +27,13 @@ import { connectLiveStream, useLive } from '../lib/store'
 function Brand() {
   return (
     <div className="flex items-center gap-2.5 px-1.5 py-1">
-      <img src="/brand-mark.svg" alt="" className="size-8 shrink-0" />
+      <img src="/brand-mark.svg" alt="" className="size-7 shrink-0" />
       <div
         className="min-w-0 leading-tight group-data-[state=collapsed]:hidden"
         data-sidebar="label"
       >
-        <p className="truncate text-base font-semibold tracking-tight text-foreground">讯枢<span className="ml-2 text-[10px] font-normal tracking-normal text-muted">工作空间</span></p>
-        <p className="mt-0.5 truncate text-[11px] text-muted">让重要消息及时抵达</p>
+        <p className="truncate text-sm font-semibold text-foreground">讯枢</p>
+        <p className="truncate text-[11px] text-muted">消息工作空间</p>
       </div>
     </div>
   )
@@ -152,8 +152,8 @@ function TopNav() {
       <Navbar.Header>
         <ProLayout.MenuToggle aria-label="打开导航" tooltip="打开导航" />
         <Sidebar.Trigger aria-label="收起或展开侧栏" />
-        <span className="ml-1 hidden whitespace-nowrap text-xs text-foreground sm:inline">
-          <span className="text-muted">{section?.title ?? '工作台'}</span> <span className="mx-2 text-muted">/</span> <span className="font-medium">{title}</span>
+        <span className="ml-1 hidden whitespace-nowrap text-sm font-semibold text-foreground sm:inline">
+          {section?.title ?? '工作台'} <span className="mx-2 font-normal text-muted">/</span> {title}
         </span>
         <Navbar.Spacer />
         <span className="hidden items-center gap-1.5 text-xs text-muted xl:flex"><span className={`size-1.5 rounded-full ${streaming ? 'bg-success' : 'bg-warning'}`} />{streaming ? '实时同步' : '正在重连'}</span>
