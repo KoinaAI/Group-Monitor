@@ -7,6 +7,7 @@ import { InlineError } from '../components/ui/States'
 import { Loader } from '../components/Loader'
 import { Toggle } from '../components/ui/Toggle'
 import { NumberSetting } from '../components/ui/NumberSetting'
+import { AppIcon } from '../lib/icons'
 import { api } from '../lib/api'
 import { useApi } from '../lib/useApi'
 import type { Rules as RulesConfig } from '../lib/types'
@@ -73,7 +74,8 @@ export default function Rules() {
           <Loader label="正在加载配置…" />
         )
       ) : (
-        <fieldset disabled={saving} className="grid min-w-0 items-start gap-4 lg:grid-cols-2">
+        <>
+        <fieldset disabled={saving} className="grid min-w-0 items-start gap-3 lg:grid-cols-2">
           <SectionCard title="静默窗口" description="窗口内的消息合并为一次升级推送">
             <div className="grid gap-3 sm:grid-cols-2">
               <NumberSetting
@@ -131,6 +133,17 @@ export default function Rules() {
             />
           </SectionCard>
         </fieldset>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-separator/70 bg-surface/70 px-4 py-3 text-xs">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent"><AppIcon name="rules" className="size-4" /></span>
+            <div className="min-w-0">
+              <p className="font-medium text-foreground">当前策略摘要</p>
+              <p className="truncate text-muted">{rules.quietWindowSec}s 聚合窗口 · 最长保持 {rules.maxHoldSec}s · {rules.urgentKeywords.length} 个紧急关键词</p>
+            </div>
+          </div>
+          <span className="shrink-0 tabular-nums text-muted">{rules.senderOverrides.length} 个发送者覆盖</span>
+        </div>
+        </>
       )}
     </Page>
   )

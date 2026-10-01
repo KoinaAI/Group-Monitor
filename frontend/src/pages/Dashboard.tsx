@@ -51,7 +51,7 @@ export default function Dashboard() {
   }
 
   return (
-    <Page className="space-y-4">
+    <Page className="dashboard-page space-y-3">
       <PageHeader
         title="总览"
         description="关注待办通知，掌握群消息处理进度。"
@@ -71,7 +71,7 @@ export default function Dashboard() {
       />
       {error ? <InlineError message={error} onRetry={reload} /> : null}
       {toggleError ? <InlineError message={toggleError} /> : null}
-      <KPIGroup className="!grid grid-cols-2 lg:grid-cols-4">
+      <KPIGroup className="!grid grid-cols-2 gap-2 lg:grid-cols-4">
         <Stat
           label="NapCat"
           value={connected ? '已连接' : '未连接'}
@@ -84,16 +84,31 @@ export default function Dashboard() {
       </KPIGroup>
 
       <Widget>
-        <Widget.Content className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 !py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <AppIcon name="rules" className="size-4 shrink-0 text-muted" />
-            <span className="text-sm font-medium">处理策略</span>
-            <span className="hidden text-xs text-muted sm:inline">消息聚合 → 重要性判断 → 通知推送</span>
+        <Widget.Content className="!px-4 !py-3 sm:!px-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+                <AppIcon name="rules" className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">处理策略</p>
+                <p className="mt-0.5 truncate text-xs text-muted">消息聚合 → 重要性判断 → 通知推送</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <IntentChip intent={jev ? 'primary' : 'default'}>Jev {jev ? '启用' : '关闭'}</IntentChip>
+              <IntentChip intent={llm ? 'primary' : 'default'}>LLM {llm ? '启用' : '关闭'}</IntentChip>
+              <Button variant="ghost" size="sm" onPress={() => navigate('/rules')}>调整规则</Button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <IntentChip intent={jev ? 'primary' : 'default'}>Jev 门控 {jev ? '启用' : '关闭'}</IntentChip>
-            <IntentChip intent={llm ? 'primary' : 'default'}>LLM 蒸馏 {llm ? '启用' : '关闭'}</IntentChip>
-            <Button variant="ghost" size="sm" onPress={() => navigate('/rules')}>调整规则</Button>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {['聚合消息', '判断重要性', '发送通知'].map((label, index) => (
+              <div key={label} className="flex items-center gap-2 rounded-lg bg-surface-secondary/70 px-3 py-2 text-xs text-muted">
+                <span className={`grid size-5 place-items-center rounded-full text-[10px] font-semibold ${index === 1 && jev ? 'bg-accent text-accent-foreground' : 'bg-default text-foreground'}`}>{index + 1}</span>
+                <span className="truncate">{label}</span>
+                {index < 2 ? <span className="ml-auto hidden text-separator sm:inline">→</span> : null}
+              </div>
+            ))}
           </div>
         </Widget.Content>
       </Widget>

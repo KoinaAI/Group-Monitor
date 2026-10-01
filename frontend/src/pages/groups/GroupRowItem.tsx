@@ -31,7 +31,7 @@ export function GroupRowItem({ row, watch, onWatch, isDisabled }: {
       </ListView.ItemContent>
       <ListView.ItemAction className="flex items-center gap-2 sm:gap-3">
         <Tooltip>
-          <Button size="sm" variant="secondary" onPress={openHistory} aria-label="查看历史记录" className="gap-1.5">
+          <Button size="sm" variant="secondary" onPress={openHistory} aria-label="历史" className="gap-1.5">
             <AppIcon name="clock" className="size-4" />
             <span className="hidden sm:inline">历史记录</span>
           </Button>

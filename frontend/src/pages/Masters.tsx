@@ -4,6 +4,7 @@ import { Widget } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState, InlineError } from '../components/ui/States'
+import { IntentChip } from '../components/ui/IntentChip'
 import { Loader } from '../components/Loader'
 import { AppIcon } from '../lib/icons'
 import { api, ApiError } from '../lib/api'
@@ -93,6 +94,20 @@ export default function Masters() {
           </Alert.Content>
         </Alert>
       ) : null}
+      <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3" aria-label="主人摘要">
+        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
+          <p className="text-[11px] font-medium text-muted">已绑定</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{masters.length}<span className="ml-1 text-sm font-medium text-muted">位</span></p>
+        </div>
+        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
+          <p className="text-[11px] font-medium text-muted">完整权限</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{masters.filter((master) => master.kind !== 'notify').length}<span className="ml-1 text-sm font-medium text-muted">位</span></p>
+        </div>
+        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
+          <p className="text-[11px] font-medium text-muted">仅通知</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{masters.filter((master) => master.kind === 'notify').length}<span className="ml-1 text-sm font-medium text-muted">位</span></p>
+        </div>
+      </div>
       <Widget className="!bg-transparent overflow-hidden">
         <Widget.Content className="!m-0 !rounded-2xl !bg-surface-secondary !p-0 !shadow-none">
           <div className="grid items-start divide-y divide-separator/50 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:divide-x lg:divide-y-0">
@@ -127,6 +142,11 @@ export default function Masters() {
                 完整主人可登录后台并管理机器人；仅通知账号只接收推送。
                 {dirty ? <span className="ml-1 text-warning">有未保存的更改。</span> : null}
               </p>
+              <div className="mt-3 flex flex-wrap gap-1.5 border-t border-separator/50 pt-3" aria-label="通知级别说明">
+                <IntentChip intent="default">普通及以上</IntentChip>
+                <IntentChip intent="primary">重要及以上</IntentChip>
+                <IntentChip intent="warning">紧急</IntentChip>
+              </div>
             </section>
             <section className="min-w-0 p-4 lg:pl-6" aria-labelledby="add-master-title">
               <header className="mb-3">

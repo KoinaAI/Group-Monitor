@@ -98,6 +98,13 @@ function AccountFooter() {
 // the mobile drawer.
 function SidebarInner() {
   const { pathname } = useLocation()
+  const currentSection = navSection(pathname)
+  const sectionLanding: Record<string, string> = {
+    '通知与接收人': '/notifications',
+    '处理策略': '/rules',
+    '连接与数据': '/sources',
+  }
+  const activeConfigRoute = currentSection ? sectionLanding[currentSection.title] : undefined
   return (
     <>
       <Sidebar.Header>
@@ -114,7 +121,7 @@ function SidebarInner() {
                   id={item.to}
                   href={item.to}
                   textValue={item.label}
-                  isCurrent={pathname === item.to || (item.to === '/groups' && pathname.startsWith('/groups/')) || (item.to === '/sources' && pathname === '/connection')}
+                  isCurrent={pathname === item.to || (item.to === '/groups' && pathname.startsWith('/groups/')) || (item.to === '/sources' && pathname === '/connection') || (section.title === '配置中心' && item.to === activeConfigRoute)}
                 >
                   <Sidebar.MenuIcon>
                     <AppIcon name={item.icon} className="size-4" />
