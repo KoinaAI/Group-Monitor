@@ -13,7 +13,7 @@ export function Page({
   return (
     <div
       className={cn(
-        'workspace-page mx-auto w-full min-w-0 max-w-[1320px] px-4 py-5 sm:px-6 sm:py-6',
+        'workspace-page mx-auto w-full min-w-0 px-4 sm:px-7 lg:px-8',
         className,
       )}
     >

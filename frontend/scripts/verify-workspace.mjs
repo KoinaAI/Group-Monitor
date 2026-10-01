@@ -61,20 +61,22 @@ try {
     await expand.evaluate((node) => node.remove())
     screenshots.push({ name, width, theme, file })
   }
-  const assertGlass = async (theme) => {
+  const assertSurface = async (theme) => {
     const result = await page.evaluate(() => {
       const root = document.documentElement
       return {
         classes: root.className,
-        blur: getComputedStyle(root).getPropertyValue('--glass-blur').trim(),
         surface: getComputedStyle(root).getPropertyValue('--surface').trim(),
-        widgetBlur: getComputedStyle(document.querySelector('.widget')).backdropFilter,
+        widgetBackground: getComputedStyle(document.querySelector('.widget')).backgroundColor,
+        contentBackground: getComputedStyle(document.querySelector('.widget__content')).backgroundColor,
+        contentShadow: getComputedStyle(document.querySelector('.widget__content')).boxShadow,
       }
     })
-    assert(result.classes.includes(`glass-${theme}`), `${theme} Glass class should be active`)
-    assert.equal(result.blur, theme === 'dark' ? '36px' : '20px')
+    assert.equal(result.classes.includes('dark'), theme === 'dark', 'Saved color preference should apply before rendering')
     assert.match(result.surface, /oklch/)
-    assert(result.widgetBlur.includes('blur('), 'Glass should blur Pro widgets')
+    assert.notEqual(result.widgetBackground, 'rgba(0, 0, 0, 0)', 'Panels need a readable surface')
+    assert.equal(result.contentBackground, 'rgba(0, 0, 0, 0)', 'Widget content should share its parent surface')
+    assert.equal(result.contentShadow, 'none', 'Widget content should not create a nested card')
   }
   const routes = ['/', '/groups', '/notices', '/logs', '/notifications', '/masters', '/rules', '/intelligence', '/sources', '/agents', '/storage', '/connection', '/groups/42/history']
   for (const width of [1440, 768, 390]) {
@@ -83,7 +85,7 @@ try {
       await page.goto(base + route)
       await page.locator('h1').first().waitFor()
       await page.waitForTimeout(200)
-      if (width === 1440 && route === '/') await assertGlass('light')
+      if (width === 1440 && route === '/') await assertSurface('light')
       const overflow = await page.evaluate(() => {
         const root = document.querySelector('.app-layout__main')
         return document.documentElement.scrollWidth > innerWidth + 1 || (root && root.scrollWidth > root.clientWidth + 1)
@@ -110,7 +112,7 @@ try {
       await page.goto(base + route)
       await page.locator('h1').first().waitFor()
       await page.waitForTimeout(120)
-      if (width === 1440 && route === '/') await assertGlass('dark')
+      if (width === 1440 && route === '/') await assertSurface('dark')
       const name = route === '/' ? 'overview' : route.slice(1).replaceAll('/', '-')
       await capture(name, width, 'dark', `${width}-dark-${name}.png`)
     }

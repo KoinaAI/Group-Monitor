@@ -38,7 +38,7 @@ export function SectionCard({
         </Card.Header>
       ) : null}
       <Card.Content className={cn(title || actions || description ? 'mt-2.5 min-w-0' : 'min-w-0', contentClassName)}>{children}</Card.Content>
-      {footer ? <Card.Footer className="mt-4">{footer}</Card.Footer> : null}
+      {footer ? <Card.Footer className="mt-3">{footer}</Card.Footer> : null}
     </Card>
   )
 }

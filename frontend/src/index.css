@@ -1,137 +1,149 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 @import "@heroui-pro/react/css";
-@import "@heroui-pro/react/themes/glass";
 
-/* Class-based dark mode. HeroUI keys its dark tokens off a `.dark` ancestor,
-   which we set on <html> in index.html. `@custom-variant` is the Tailwind v4
-   directive that *defines* the `dark` variant, overriding its default
-   prefers-color-scheme behavior; the `.dark, .dark *` selector covers both the
-   <html> element itself and everything under it. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-html,
-body,
-#root {
-  height: 100%;
+/* Shared OSS and Pro palette. Opaque surfaces keep information legible. */
+:root {
+  --background: oklch(97.7% .004 250);
+  --foreground: oklch(27% .021 255);
+  --muted: oklch(53% .018 255);
+  --surface: oklch(100% 0 0);
+  --surface-secondary: oklch(96.5% .006 250);
+  --surface-tertiary: oklch(94.5% .009 250);
+  --overlay: var(--surface);
+  --accent: oklch(54% .205 259);
+  --accent-foreground: oklch(100% 0 0);
+  --default: var(--surface-tertiary);
+  --border: oklch(91.5% .009 250);
+  --separator: oklch(93.5% .007 250);
+  --field-background: var(--surface-secondary);
+  --field-border: var(--border);
+  --field-shadow: 0 0 0 transparent;
+  --surface-shadow: 0 1px 3px oklch(27% .021 255 / .035);
+  --radius: .5rem;
+  --radius-field: .5rem;
+  --radius-selector: .5rem;
+  --workspace-sidebar-width: 220px;
 }
-
+:root.dark {
+  --background: oklch(18% .015 255);
+  --foreground: oklch(94% .008 250);
+  --muted: oklch(70% .02 250);
+  --surface: oklch(22% .018 255);
+  --surface-secondary: oklch(25% .02 255);
+  --surface-tertiary: oklch(28% .021 255);
+  --overlay: oklch(25% .018 255);
+  --accent: oklch(72% .15 255);
+  --accent-foreground: oklch(19% .028 255);
+  --border: oklch(32% .022 255);
+  --separator: oklch(29% .021 255);
+  --field-background: var(--surface-secondary);
+  --surface-shadow: 0 1px 3px oklch(0% 0 0 / .1);
+}
+html, body, #root { height: 100%; }
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 80% -12%, color-mix(in oklab, var(--accent) 10%, transparent), transparent 32%),
-    radial-gradient(circle at 18% 18%, color-mix(in oklab, var(--foreground) 3%, transparent), transparent 28%),
-    var(--background-gradient),
-    var(--background, Canvas);
-  background-attachment: fixed;
+  background: var(--background);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-
-/* Thin, unobtrusive scrollbars that match the dark surfaces. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklch, currentColor 18%, transparent) transparent;
+  scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
 }
 
-/* Compact workspace: native Pro surfaces and a single content scroll area. */
+/* Full-height navigation and one scrollable content region. */
 .workspace-shell {
-  --sidebar-width: 232px;
-  --navbar-height: 54px;
-  background: transparent;
+  --sidebar-width: var(--workspace-sidebar-width);
+  --navbar-height: 56px;
+  background: var(--background);
 }
-.workspace-page {
-  overflow-wrap: anywhere;
-  max-width: 1320px;
-  padding-top: 1.5rem;
-  padding-bottom: 2.5rem;
-}
-.workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] { font-weight: 600; }
-.workspace-shell .app-layout__toolbar { position: relative; top: auto; }
-.workspace-shell .app-layout__main {
-  scroll-padding-top: 1.5rem;
-  background: linear-gradient(180deg, color-mix(in oklab, var(--surface-secondary) 56%, transparent), transparent 42%);
-}
-.workspace-shell [data-slot="sidebar"],
-.workspace-shell .app-layout__header,
-.workspace-shell .app-layout__toolbar {
-  background: color-mix(in oklab, var(--background) 78%, transparent);
-  backdrop-filter: blur(var(--glass-blur));
-}
-.workspace-shell [data-slot="sidebar"] { border-color: color-mix(in oklab, var(--separator) 70%, transparent); }
-.workspace-shell .app-layout__toolbar { border-color: color-mix(in oklab, var(--separator) 74%, transparent); }
-.workspace-shell [data-slot="sidebar-menu-item"] {
-  min-height: 2.35rem;
-  border-radius: .75rem;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-.workspace-shell .workspace-subnav-active { background: var(--surface); }
-.workspace-shell .workspace-subnav:hover { background: var(--surface-secondary); }
+.workspace-shell [data-slot="sidebar"] { --sidebar-width: var(--workspace-sidebar-width); background: var(--background); border-color: var(--border); }
+.workspace-shell .app-layout__header { border-bottom: 1px solid var(--separator); background: var(--background); }
+.workspace-shell .app-layout__toolbar { position: relative; top: auto; background: var(--background); }
+.workspace-shell .app-layout__main { scroll-padding-top: 2rem; }
+.workspace-shell [data-slot="sidebar-header"] { padding: 1.25rem .875rem 1rem; }
+.workspace-shell [data-slot="sidebar-group-label"] { font-size: .6875rem; color: var(--muted); }
+.workspace-shell [data-slot="sidebar-menu-item"] { min-height: 2.375rem; border-radius: .5rem; transition: none; }
 .workspace-shell [data-slot="sidebar-menu-item"][aria-current="page"] {
-  background: color-mix(in oklab, var(--surface) 88%, var(--accent) 12%);
-  box-shadow: 0 1px 2px color-mix(in oklab, var(--foreground) 8%, transparent);
+  background: var(--surface); box-shadow: var(--surface-shadow); color: var(--accent); font-weight: 600;
 }
 .workspace-shell [data-slot="sidebar-menu-item"]:hover:not([aria-current="page"]) { background: var(--surface-secondary); }
-.glass-light .workspace-popover,
-.glass-dark .workspace-popover {
-  background: var(--overlay);
-  backdrop-filter: blur(var(--glass-blur));
-  box-shadow: var(--overlay-shadow);
+.workspace-shell [data-slot="sidebar-menu-icon"] { color: inherit; }
+.workspace-shell .sidebar__menu-item[data-current="true"] .sidebar__menu-item-content { background: var(--surface); box-shadow: var(--surface-shadow); }
+.workspace-shell .sidebar__menu-item[data-current="true"] .sidebar__menu-icon,
+.workspace-shell .sidebar__menu-item[data-current="true"] .sidebar__menu-label { color: var(--accent); }
+.workspace-shell .sidebar__menu-item-content { border-radius: .5rem; transition: none; }
+.workspace-shell .workspace-subnav { border-radius: .375rem; }
+.workspace-shell .workspace-subnav-active { background: var(--surface); color: var(--accent); box-shadow: var(--surface-shadow); }
+.workspace-shell .workspace-subnav:hover { background: var(--surface-secondary); }
+.workspace-popover { background: var(--overlay); box-shadow: var(--overlay-shadow); }
+.workspace-page { max-width: 1240px; overflow-wrap: anywhere; padding-top: 2rem; padding-bottom: 2.5rem; }
+.workspace-page .page-header { margin-bottom: 1.5rem; gap: 1rem; }
+.workspace-page .page-header h1 { font-size: 1.5rem; line-height: 1.35; letter-spacing: -.04em; }
+.workspace-page .page-header p { font-size: .8125rem; }
+
+/* Deliberate single-surface Widget: header and content share one panel,
+   removing the Pro default's redundant inset card. */
+.workspace-shell .widget {
+  min-width: 0; border: 1px solid var(--border); border-radius: .75rem;
+  background: var(--surface); box-shadow: var(--surface-shadow); overflow: visible;
+}
+.workspace-shell .widget__header { margin: 0; min-height: 3rem; padding: .75rem 1rem; }
+.workspace-shell .widget__content {
+  margin: 0; border-radius: 0; background: transparent; box-shadow: none;
+  padding: 0 1rem 1rem; overflow: visible;
+}
+.workspace-shell .widget__content:first-child { margin-top: 0; padding-top: 1rem; }
+.workspace-shell .widget__footer { padding: .5rem 1rem .875rem; }
+.workspace-shell .widget__title { font-size: .8125rem; }
+.workspace-shell .workspace-card { border: 1px solid var(--border); border-radius: .75rem; }
+.workspace-shell .workspace-card .card__header { min-height: 0; }
+.workspace-shell .workspace-card .card__title { font-size: .875rem; font-weight: 600; }
+.workspace-shell .workspace-card .card__description { font-size: .75rem; line-height: 1.6; }
+.workspace-shell .kpi-group { border: 1px solid var(--border); border-radius: .75rem; gap: 0; }
+.workspace-shell .kpi { padding: 1rem 1.125rem; background: transparent; }
+.workspace-shell .kpi + .kpi { border-inline-start: 1px solid var(--separator); }
+.workspace-shell .item-card { box-shadow: none; background: transparent; border-radius: .5rem; }
+.workspace-shell .list-view__item[data-selected="true"] { background: var(--accent-soft); }
+.workspace-shell .list-view__item:last-child { border-end-start-radius: .75rem; border-end-end-radius: .75rem; }
+.workspace-shell .number-field__group { min-height: 2.375rem; }
+.workspace-shell .input, .workspace-shell .native-select__select { min-height: 2.375rem; }
+
+.dashboard-strategy { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .875rem 1rem; background: var(--surface-secondary); border-radius: .625rem; }
+.dashboard-section-label { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .6875rem; font-weight: 500; }
+.dashboard-main { display: grid; align-items: start; gap: 1rem; grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 1fr); }
+.dashboard-feed { margin-top: 1rem; }
+.dashboard-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; font-size: .75rem; color: var(--muted); }
+.dashboard-shortcuts { display: grid; gap: .25rem; }
+.dashboard-shortcut { display: flex; align-items: center; gap: .75rem; padding: .625rem .25rem; border-radius: .5rem; }
+.dashboard-shortcut:hover { background: var(--surface-secondary); }
+.dashboard-shortcut:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.dashboard-empty { display: flex; align-items: center; gap: .75rem; padding: 1.25rem 1rem; }
+.dashboard-empty p { font-size: .8125rem; }
+
+/* Unsaved changes follow the actual sidebar width. */
+@media (min-width: 769px) {
+  .workspace-shell [data-slot="action-bar"] { inset-inline-start: calc(50% + var(--workspace-sidebar-width) / 2); }
+  .workspace-shell:has([data-slot="sidebar"][data-state="collapsed"]) [data-slot="action-bar"] { inset-inline-start: calc(50% + 24px); }
+}
+@media (max-width: 1023px) {
+  .dashboard-main { grid-template-columns: minmax(0, 1fr); }
+  .workspace-shell .kpi:nth-child(3) { border-inline-start: 0; }
+  .workspace-shell .kpi:nth-child(n+3) { border-top: 1px solid var(--separator); }
 }
 @media (max-width: 640px) {
-  .workspace-page { padding-top: 1rem; padding-bottom: 2rem; }
-  .workspace-page .segment {
-    max-width: 100%;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
+  .workspace-page { padding-top: 1.25rem; padding-bottom: 2rem; }
+  .workspace-page .page-header { margin-bottom: 1.125rem; }
+  .workspace-page .page-header h1 { font-size: 1.375rem; }
+  .workspace-shell .kpi { padding: .875rem; }
+  .workspace-shell .kpi:nth-child(3) { border-inline-start: 0; }
+  .workspace-shell .kpi:nth-child(n+3) { border-top: 1px solid var(--separator); }
+  .workspace-page .segment { max-width: 100%; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .workspace-page .segment::-webkit-scrollbar { display: none; }
   .workspace-page .segment__item { width: auto; flex: 0 0 auto; }
-}
-
-/* Shared surface language for the workspace: modest borders, compact headers,
-   and enough contrast to make neighboring widgets scan as separate modules. */
-.workspace-shell [data-slot="widget"],
-.workspace-shell [data-slot="card"] {
-  border: 1px solid color-mix(in oklab, var(--separator) 72%, transparent);
-  box-shadow: 0 10px 28px color-mix(in oklab, var(--foreground) 4%, transparent);
-}
-.workspace-shell [data-slot="widget"] [data-slot="widget-header"],
-.workspace-shell [data-slot="card"] [data-slot="card-header"] {
-  min-height: 3.25rem;
-}
-.workspace-shell [data-slot="widget-title"],
-.workspace-shell [data-slot="card-title"] { letter-spacing: -.01em; }
-.workspace-shell .page-header {
-  padding: .25rem 0 .1rem;
-}
-.workspace-shell .page-header h1 { letter-spacing: -.035em; }
-
-.dashboard-hero {
-  border: 1px solid color-mix(in oklab, var(--accent) 18%, var(--separator));
-  background:
-    linear-gradient(135deg, color-mix(in oklab, var(--accent) 9%, var(--surface)), var(--surface) 58%),
-    var(--surface);
-  box-shadow: 0 14px 32px color-mix(in oklab, var(--accent) 7%, transparent);
-}
-.dashboard-hero [data-slot="kpi"] { background: color-mix(in oklab, var(--surface) 78%, transparent); }
-.dashboard-section-label {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  color: var(--muted);
-  font-size: .75rem;
-  font-weight: 600;
-  letter-spacing: .02em;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .workspace-shell [data-slot="sidebar-menu-item"] { transition: none; }
-}
-
-/* ActionBar is fixed; center it over the content remaining beside the rail. */
-@media (min-width: 769px) {
-  .workspace-shell [data-slot="action-bar"] { inset-inline-start: calc(50% + 120px); }
-  .workspace-shell:has([data-slot="sidebar"][data-state="collapsed"]) [data-slot="action-bar"] { inset-inline-start: calc(50% + 24px); }
+  .dashboard-strategy { gap: .625rem; padding: .75rem; }
 }
