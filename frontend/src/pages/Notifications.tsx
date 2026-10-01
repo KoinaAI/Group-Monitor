@@ -77,21 +77,35 @@ export default function Notifications() {
           <EmptyState.Description>添加 ntfy 主题或 Bark 设备，即可在手机上接收群通知。</EmptyState.Description>
         </EmptyState.Header>
       </EmptyState>
-    ) : <div className="grid items-start gap-4 xl:grid-cols-2">
+    ) : <div className="grid items-start gap-4 lg:grid-cols-2">
       {targets.map((target) => {
         const isCollapsed = collapsed[target.id] ?? false
-        return <SectionCard key={target.id} title={target.name || (target.kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送')} description={target.kind === 'ntfy' ? 'ntfy · 主题广播' : 'Bark · 设备推送'} actions={<>
-          <Button size="sm" variant="secondary" isDisabled={busy || !target.enabled || dirty} onPress={() => test(target.id)}>发送测试通知</Button>
+        return <SectionCard key={target.id} title={target.name || (target.kind === 'ntfy' ? 'ntfy 广播' : 'Bark 推送')} description={`${target.kind === 'ntfy' ? 'ntfy · 主题广播' : 'Bark · 设备推送'} · ${target.accountIds?.length ? `${target.accountIds.length} 个账号` : '所有账号'}`} actions={
           <Button size="sm" variant="tertiary" aria-expanded={!isCollapsed} onPress={() => setCollapsed((current) => ({ ...current, [target.id]: !isCollapsed }))}>
             {isCollapsed ? '展开' : '收起'}
           </Button>
-          <Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => { setTargets((current) => current.filter((item) => item.id !== target.id)); setCollapsed((current) => { const next = { ...current }; delete next[target.id]; return next }); setNote('') }}>移除</Button>
-        </>}>
-        {isCollapsed ? <p className="truncate text-xs text-muted">{target.note?.trim() || '配置已收起，点击展开查看详情。'}</p> : <fieldset disabled={busy} className="flex min-w-0 flex-col gap-4">
+        } footer={<div className="flex w-full flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-muted">{target.enabled ? `接收${target.minLevel === 3 ? '紧急' : target.minLevel === 2 ? '重要及以上' : '一般及以上'}通知` : '通知已停用'}</span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" isDisabled={busy || !target.enabled || dirty} onPress={() => test(target.id)}>发送测试通知</Button>
+            <Button size="sm" variant="danger-soft" isDisabled={busy} onPress={() => { setTargets((current) => current.filter((item) => item.id !== target.id)); setCollapsed((current) => { const next = { ...current }; delete next[target.id]; return next }); setNote('') }}>移除</Button>
+          </div>
+        </div>}>
+        {isCollapsed ? <p className="truncate text-xs text-muted">{target.note?.trim() || [target.url, target.kind === 'ntfy' ? target.topic : target.group].filter(Boolean).join(' / ') || '点击展开配置通知目标'}</p> : <fieldset disabled={busy} className="flex min-w-0 flex-col gap-3">
           <Toggle label="启用通知目标" isSelected={target.enabled} onChange={(enabled) => change(target.id, { enabled })} isDisabled={busy} size="sm" />
           <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <TextSetting label="名称" value={target.name} onChange={(name) => change(target.id, { name })} />
-            <TextSetting label="服务器地址" type="url" value={target.url} onChange={(url) => change(target.id, { url })} />
+            <div className="grid min-w-0 gap-1.5">
+              <label htmlFor={`level-${target.id}`} className="text-sm font-medium">最低通知等级</label>
+              <NativeSelect variant="secondary" fullWidth>
+                <NativeSelect.Trigger id={`level-${target.id}`} value={target.minLevel} onChange={(event) => change(target.id, { minLevel: Number(event.target.value) })}>
+                  <NativeSelect.Option value={1}>1 · 一般及以上</NativeSelect.Option>
+                  <NativeSelect.Option value={2}>2 · 重要及以上</NativeSelect.Option>
+                  <NativeSelect.Option value={3}>3 · 仅紧急</NativeSelect.Option>
+                </NativeSelect.Trigger>
+              </NativeSelect>
+            </div>
+            <TextSetting className="sm:col-span-2" label="服务器地址" type="url" value={target.url} onChange={(url) => change(target.id, { url })} />
             {target.kind === 'ntfy' ? <>
               <TextSetting label="主题" value={target.topic ?? ''} onChange={(topic) => change(target.id, { topic })} placeholder="school-notices" />
               <TextSetting label="访问令牌（可选）" type="password" value={target.token ?? ''} onChange={(token) => change(target.id, { token })} description="留空保留原值，保存后隐藏。" />
@@ -99,17 +113,6 @@ export default function Notifications() {
               <TextSetting label="设备 Key" type="password" value={target.deviceKey ?? ''} onChange={(deviceKey) => change(target.id, { deviceKey })} description="留空保留原值，保存后隐藏。" />
               <TextSetting label="通知分组" value={target.group ?? ''} onChange={(group) => change(target.id, { group })} />
             </>}
-            <TextSetting className="sm:col-span-2" label="备注" value={target.note ?? ''} onChange={(note) => change(target.id, { note } as Partial<NotificationDraft>)} placeholder="例如：值班手机、备用通道" description="仅用于识别通知目标，不会发送给接收者。" />
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label htmlFor={`level-${target.id}`} className="text-sm font-medium">最低通知等级</label>
-            <NativeSelect variant="secondary" className="w-44">
-              <NativeSelect.Trigger id={`level-${target.id}`} value={target.minLevel} onChange={(event) => change(target.id, { minLevel: Number(event.target.value) })}>
-                <NativeSelect.Option value={1}>1 · 一般及以上</NativeSelect.Option>
-                <NativeSelect.Option value={2}>2 · 重要及以上</NativeSelect.Option>
-                <NativeSelect.Option value={3}>3 · 仅紧急</NativeSelect.Option>
-              </NativeSelect.Trigger>
-            </NativeSelect>
           </div>
           <fieldset className="min-w-0">
             <legend className="mb-2 text-xs text-muted">适用账号（不选择时接收所有账号）</legend>
@@ -120,6 +123,10 @@ export default function Notifications() {
               </label>) : <span className="text-xs text-muted">所有账号</span>}
             </div>
           </fieldset>
+          <details className="text-sm">
+            <summary className="cursor-pointer text-muted">备注{target.note?.trim() ? <span className="ml-2 text-xs">{target.note}</span> : <span className="ml-2 text-xs">可选</span>}</summary>
+            <TextSetting className="mt-2" label="备注" value={target.note ?? ''} onChange={(note) => change(target.id, { note } as Partial<NotificationDraft>)} placeholder="例如：值班手机、备用通道" description="仅用于识别通知目标，不会发送给接收者。" />
+          </details>
         </fieldset>}
       </SectionCard>
       })}
