@@ -16,7 +16,7 @@
 }
 :root.dark {
   --workspace-wallpaper: url("/backgrounds/workspace-pattern-dark.svg");
-  --workspace-wallpaper-color: #111820;
+  --workspace-wallpaper-color: var(--background);
 }
 
 html,

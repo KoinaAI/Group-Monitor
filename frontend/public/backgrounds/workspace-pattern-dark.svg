@@ -3,7 +3,7 @@
   <desc>Thirty monochrome line drawings on a solid background. Repeat this tile in both directions.</desc>
   <defs>
     <g id="paper-plane"><path d="m44 4-14 40-8-18-18-8L44 4ZM44 4 22 26"/></g>
-    <g id="planet"><g transform="rotate(-25 24 24)"><ellipse cx="24" cy="24" rx="23" ry="7"/><circle cx="24" cy="24" r="14" fill="#111820"/><path d="M1 24c0 9.3 46 9.3 46 0"/></g></g>
+    <g id="planet"><g transform="rotate(-25 24 24)"><ellipse cx="24" cy="24" rx="23" ry="7"/><circle cx="24" cy="24" r="14" fill="#0a0b0c"/><path d="M1 24c0 9.3 46 9.3 46 0"/></g></g>
     <g id="chat"><path d="M12 7h24a8 8 0 0 1 8 8v15a8 8 0 0 1-8 8H21l-11 7 1-7a8 8 0 0 1-7-8V15a8 8 0 0 1 8-8Z"/><path d="M13 18h22M13 26h14"/></g>
     <g id="cloud"><path d="M13 36a10 10 0 1 1 1-20 13 13 0 0 1 25 5 8 8 0 1 1 1 15H13Z"/></g>
     <g id="sun"><circle cx="24" cy="24" r="10"/><path d="M24 3v5M24 40v5M3 24h5M40 24h5M9 9l4 4M35 35l4 4M9 39l4-4M35 13l4-4"/></g>
@@ -33,8 +33,8 @@
     <g id="flower"><path d="M18 17C5 3 32-6 30 14 48 6 52 32 33 29c8 18-18 23-17 5C-2 39-5 13 18 17Z"/><circle cx="24" cy="24" r="6"/></g>
     <g id="atom"><ellipse cx="24" cy="24" rx="21" ry="8"/><ellipse cx="24" cy="24" rx="21" ry="8" transform="rotate(60 24 24)"/><ellipse cx="24" cy="24" rx="21" ry="8" transform="rotate(120 24 24)"/><circle cx="24" cy="24" r="2"/></g>
   </defs>
-  <rect width="600" height="600" fill="#111820"/>
-  <g fill="none" stroke="#718292" stroke-opacity=".13" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect width="600" height="600" fill="#0a0b0c"/>
+  <g fill="none" stroke="#71717a" stroke-opacity=".08" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
     <use href="#paper-plane" transform="translate(33 23) scale(0.833333) rotate(8 24 24)" stroke-width="1.800000"/>
     <use href="#planet" transform="translate(334.2 329.9) scale(1.000000) rotate(14 24 24)" stroke-width="1.500000"/>
     <use href="#chat" transform="translate(340.6 37.6) scale(0.791667) rotate(14 24 24)" stroke-width="1.894737"/>
