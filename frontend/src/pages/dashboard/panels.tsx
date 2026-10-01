@@ -24,7 +24,7 @@ export function MessageFeed() {
           <ScrollShadow className="max-h-72 overflow-y-auto px-4">
             <ul className="divide-y divide-border/60">
               {messages.map((m) => (
-                <li key={`${m.messageId}-${m.time}`} className="py-2.5 first:pt-1">
+                <li key={`${m.messageId}-${m.time}`} className="py-2.5">
                   <div className="flex items-center gap-2">
                     <span className="min-w-0 truncate text-sm font-medium">{m.nickname || m.userId}</span>
                     {m.role !== 'member' ? (
@@ -117,7 +117,7 @@ export function EscalationPanel() {
           <ScrollShadow className="max-h-96 overflow-y-auto px-4">
             <ul className="divide-y divide-border/60">
               {escalations.slice(0, 8).map((e, index) => (
-                <li key={`${e.ts}-${e.groupId}-${index}`} className="py-3 first:pt-1">
+                <li key={`${e.ts}-${e.groupId}-${index}`} className="py-3">
                   <div className="flex items-start gap-3">
                     <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-secondary text-muted">
                       <AppIcon name={e.urgent ? 'urgent' : 'bell'} className={`size-4 ${e.urgent ? 'text-warning' : ''}`} />
