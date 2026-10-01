@@ -74,19 +74,10 @@ export default function Groups() {
         description="集中管理监听范围，查看群组历史消息。"
         actions={<Button variant="secondary" size="sm" onPress={reload} isDisabled={loading || saving || dirtyCount > 0}><AppIcon name="refresh" className="size-4" />刷新群组</Button>}
       />
-      <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3" aria-label="群组摘要">
-        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] font-medium text-muted">群组总数</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{rows.length}</p>
-        </div>
-        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] font-medium text-muted">监听覆盖</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{watchRate}<span className="ml-0.5 text-sm font-medium text-muted">%</span></p>
-        </div>
-        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] font-medium text-muted">成员规模</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{totalMembers.toLocaleString()}<span className="ml-1 text-sm font-medium text-muted">人</span></p>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums text-muted" aria-label="群组摘要">
+        <span><span className="font-medium text-foreground">{rows.length}</span> 个群组</span>
+        <span>监听覆盖 <span className="font-medium text-foreground">{watchRate}%</span></span>
+        <span>成员规模 <span className="font-medium text-foreground">{totalMembers.toLocaleString()}</span> 人</span>
       </div>
       <Widget>
         <Widget.Header className="flex-wrap gap-y-2 py-2">

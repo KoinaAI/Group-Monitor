@@ -3,7 +3,6 @@ import { Button, Input, ListBox, TextField } from '@heroui/react'
 import { ListView, Widget } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
-import { TextSetting } from '../components/ui/TextSetting'
 import { IntentChip } from '../components/ui/IntentChip'
 import { EmptyState, InlineError } from '../components/ui/States'
 import { Loader } from '../components/Loader'
@@ -76,17 +75,13 @@ export default function Notices() {
   const selected = rows.find((notice) => notice.id === selectedId) || rows[0]
 
   return (
-    <Page className="flex flex-col gap-4">
-      <PageHeader title="通知归档" description="集中检索通知，查看时间、地点和待办事项。" />
+    <Page>
+      <PageHeader title="通知归档" description="集中检索通知，查看时间、地点和待办事项。" actions={<span className="pt-1 text-xs tabular-nums text-muted">已加载 {rows.length} 条</span>} />
       <Widget>
-        <Widget.Header>
-          <Widget.Title>归档检索</Widget.Title>
-          <Widget.Description className="tabular-nums">已加载 {rows.length} 条</Widget.Description>
-        </Widget.Header>
         <Widget.Content>
-          <form onSubmit={(event) => { event.preventDefault(); void load() }} className="grid items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,20rem)_auto]">
-            <TextSetting label="关键词" value={query} onChange={setQuery} placeholder="搜索标题、摘要或事项" />
-            <div className="relative min-w-0">
+          <form aria-label="归档检索" onSubmit={(event) => { event.preventDefault(); void load() }} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(12rem,18rem)_auto]">
+            <TextField aria-label="关键词" value={query} onChange={setQuery}><Input placeholder="搜索标题、摘要或事项" variant="secondary" /></TextField>
+            <div className="relative col-span-2 row-start-2 min-w-0 sm:col-span-1 sm:row-start-auto">
               <TextField
                 aria-label="筛选群组"
                 value={groupQuery}
@@ -126,7 +121,7 @@ export default function Notices() {
                 </ListBox>
               </div> : null}
             </div>
-            <Button type="submit" isPending={loading}>搜索</Button>
+            <Button className="col-start-2 row-start-1 sm:col-start-3" type="submit" isPending={loading}>搜索</Button>
           </form>
           {selectedGroups.length ? <div className="mt-3 flex flex-wrap items-center gap-1.5" aria-label="已选群组">
             <span className="mr-1 text-xs text-muted">已选群组</span>
@@ -146,7 +141,7 @@ export default function Notices() {
       {loading && rows.length === 0 ? <Loader label="正在加载通知…" /> : !error && rows.length === 0 ? (
         <EmptyState icon="fileText" title="暂无通知" description="正式通知通过判断后会在这里保留；也可以换个关键词搜索。" />
       ) : (
-        <div className="grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(18rem,0.85fr)_minmax(0,1.4fr)]">
+        <div className="mt-4 grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(18rem,0.9fr)_minmax(0,1.4fr)]">
           <Widget>
             <Widget.Header>
               <Widget.Title>通知列表</Widget.Title>
@@ -164,13 +159,13 @@ export default function Notices() {
                 className="max-h-[22rem] overflow-y-auto lg:max-h-[calc(100dvh-23rem)]"
               >
                 {rows.map((notice) => (
-                  <ListView.Item id={notice.id} key={notice.id} textValue={notice.result.title || '群通知'} className="items-start px-3 py-3">
-                    <ListView.ItemContent className="flex-col items-start gap-1.5">
+                  <ListView.Item id={notice.id} key={notice.id} textValue={notice.result.title || '群通知'} className="items-start px-4 py-2.5">
+                    <ListView.ItemContent className="flex-col items-start gap-1">
                       <span className="flex w-full items-center justify-between gap-2">
-                        <IntentChip intent={urgencyIntent(notice.result.level)}>{urgencyLabel(notice.result.level)}</IntentChip>
+                        <ListView.Title className="max-w-full">{notice.result.title || '群通知'}</ListView.Title>
                         <span className="text-[11px] tabular-nums text-muted">{fmtDateTime(notice.createdAt)}</span>
                       </span>
-                      <ListView.Title className="max-w-full">{notice.result.title || '群通知'}</ListView.Title>
+                      <span className="flex max-w-full items-center gap-2"><IntentChip intent={urgencyIntent(notice.result.level)}>{urgencyLabel(notice.result.level)}</IntentChip><span className="truncate text-xs text-muted">{notice.group || `群 ${notice.groupId}`}</span></span>
                       <ListView.Description className="mt-0 max-w-full">{notice.group || `群 ${notice.groupId}`}{notice.result.summary ? ` · ${notice.result.summary}` : ''}</ListView.Description>
                     </ListView.ItemContent>
                   </ListView.Item>

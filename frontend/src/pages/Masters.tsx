@@ -94,22 +94,13 @@ export default function Masters() {
           </Alert.Content>
         </Alert>
       ) : null}
-      <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3" aria-label="主人摘要">
-        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] font-medium text-muted">已绑定</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{masters.length}<span className="ml-1 text-sm font-medium text-muted">位</span></p>
-        </div>
-        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] font-medium text-muted">完整权限</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{masters.filter((master) => master.kind !== 'notify').length}<span className="ml-1 text-sm font-medium text-muted">位</span></p>
-        </div>
-        <div className="rounded-xl border border-separator/70 bg-surface/70 px-3 py-2.5 sm:px-4">
-          <p className="text-[11px] font-medium text-muted">仅通知</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-foreground">{masters.filter((master) => master.kind === 'notify').length}<span className="ml-1 text-sm font-medium text-muted">位</span></p>
-        </div>
+      <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs tabular-nums text-muted" aria-label="主人摘要">
+        <span>已绑定 <span className="font-medium text-foreground">{masters.length}</span> 位</span>
+        <span>完整权限 <span className="font-medium text-foreground">{masters.filter((master) => master.kind !== 'notify').length}</span> 位</span>
+        <span>仅通知 <span className="font-medium text-foreground">{masters.filter((master) => master.kind === 'notify').length}</span> 位</span>
       </div>
-      <Widget className="!bg-transparent overflow-hidden">
-        <Widget.Content className="!m-0 !rounded-2xl !bg-surface-secondary !p-0 !shadow-none">
+      <Widget>
+        <Widget.Content className="!p-0">
           <div className="grid items-start divide-y divide-separator/50 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:divide-x lg:divide-y-0">
             <section className="min-w-0 p-4 lg:pr-6" aria-labelledby="master-list-title">
               <header className="mb-3">

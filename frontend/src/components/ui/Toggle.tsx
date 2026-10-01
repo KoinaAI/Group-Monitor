@@ -27,7 +27,7 @@ export function Toggle({
         </div>
         <Switch.Control><Switch.Thumb /></Switch.Control>
       </Switch.Content>
-      {description ? <Description className="max-w-prose text-xs">{description}</Description> : null}
+      {description ? <Description className="max-w-prose !ps-0 text-xs leading-5">{description}</Description> : null}
     </Switch>
   )
 }
