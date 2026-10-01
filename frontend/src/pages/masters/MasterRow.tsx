@@ -21,7 +21,7 @@ export function MasterRow({
 }) {
   const notify = master.kind === 'notify'
   return (
-    <li className="grid grid-cols-[2.5rem_minmax(0,1fr)_2rem] items-center gap-x-3 gap-y-2 py-3 first:pt-0 last:pb-0 sm:grid-cols-[2.5rem_minmax(0,1fr)_9rem_2rem]">
+    <li className="grid grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 py-2.5 first:pt-0 last:pb-0 sm:grid-cols-[2.5rem_minmax(0,1fr)_9rem_2rem]">
       <Avatar size="md" className="shrink-0">
         <Avatar.Image src={userAvatar(master.userId)} alt={master.nickname} loading="lazy" />
         <Avatar.Fallback>{(master.nickname || 'Q').slice(0, 1)}</Avatar.Fallback>
@@ -45,7 +45,7 @@ export function MasterRow({
         onChange={(v) => {
           if (v != null) onLevel(Number(v) as MinLevel)
         }}
-        className="col-start-2 w-36 sm:col-start-auto"
+        className="col-start-2 w-34 sm:col-start-auto"
       >
         <Select.Trigger>
           <Select.Value />

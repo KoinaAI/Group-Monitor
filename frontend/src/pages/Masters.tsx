@@ -3,7 +3,6 @@ import { Alert, Button } from '@heroui/react'
 import { Widget } from '@heroui-pro/react'
 import { Page } from '../components/Page'
 import { PageHeader } from '../components/PageHeader'
-import { SectionCard } from '../components/ui/SectionCard'
 import { EmptyState, InlineError } from '../components/ui/States'
 import { Loader } from '../components/Loader'
 import { AppIcon } from '../lib/icons'
@@ -94,29 +93,14 @@ export default function Masters() {
           </Alert.Content>
         </Alert>
       ) : null}
-      <Widget>
-        <Widget.Header className="flex-wrap gap-y-1.5">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <Widget.Title>主人管理</Widget.Title>
-            <Widget.Description className="tabular-nums">
-              管理升级通知的接收账号与通知门槛 · 共 {masters.length} 位
-            </Widget.Description>
-          </div>
-        </Widget.Header>
-        <Widget.Content className="!p-0">
-          <div className="grid items-start divide-y divide-separator lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:divide-x lg:divide-y-0">
-            <SectionCard
-              variant="transparent"
-              className="p-4 lg:pr-6"
-              title="主人列表"
-              description="按账号设置通知门槛"
-              footer={
-                <p className="text-xs leading-relaxed text-muted">
-                  完整主人可登录后台并管理机器人；仅通知账号只接收推送。
-                  {dirty ? <span className="ml-1 text-warning">有未保存的更改。</span> : null}
-                </p>
-              }
-            >
+      <Widget className="!bg-transparent overflow-hidden">
+        <Widget.Content className="!m-0 !rounded-2xl !bg-surface-secondary !p-0 !shadow-none">
+          <div className="grid items-start divide-y divide-separator/50 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:divide-x lg:divide-y-0">
+            <section className="min-w-0 p-4 lg:pr-6" aria-labelledby="master-list-title">
+              <header className="mb-3">
+                <h2 id="master-list-title" className="text-base font-semibold text-foreground">主人列表</h2>
+                <p className="mt-0.5 text-sm text-muted">按账号设置通知门槛 · 共 {masters.length} 位</p>
+              </header>
               {loading ? (
                 <Loader label="正在加载…" />
               ) : error ? (
@@ -128,7 +112,7 @@ export default function Masters() {
                   description="添加至少一位主人以接收升级通知"
                 />
               ) : (
-                <ul aria-label="主人列表" className="divide-y divide-border">
+                <ul aria-label="主人列表" className="divide-y divide-separator/40">
                   {masters.map((m) => (
                     <MasterRow
                       key={m.userId}
@@ -139,15 +123,18 @@ export default function Masters() {
                   ))}
                 </ul>
               )}
-            </SectionCard>
-            <SectionCard
-              variant="transparent"
-              className="p-4 lg:pl-6"
-              title="添加主人"
-              description="核对身份后，通过 QQ 私信验证码完成绑定"
-            >
+              <p className="mt-3 text-xs leading-relaxed text-muted">
+                完整主人可登录后台并管理机器人；仅通知账号只接收推送。
+                {dirty ? <span className="ml-1 text-warning">有未保存的更改。</span> : null}
+              </p>
+            </section>
+            <section className="min-w-0 p-4 lg:pl-6" aria-labelledby="add-master-title">
+              <header className="mb-3">
+                <h2 id="add-master-title" className="text-base font-semibold text-foreground">添加主人</h2>
+                <p className="mt-0.5 text-sm text-muted">核对身份后，通过 QQ 私信验证码完成绑定</p>
+              </header>
               <AddMasterWizard existing={masters} onBound={onBound} />
-            </SectionCard>
+            </section>
           </div>
         </Widget.Content>
       </Widget>
