@@ -13,6 +13,8 @@ npm run dev
 
 Vite 默认监听 5173，将 `/api` 转发到 `127.0.0.1:8787`。现有安装已经包含 Pro 时不需要重新运行 setup，也不需要迁移到 Next.js。
 
+`package.json` 的 npm override 将 `heroui-pro` 的 `figlet` 固定为 `1.11.3`，修复 [GHSA-62ch-8vmq-8xm7](https://github.com/advisories/GHSA-62ch-8vmq-8xm7) 的无限循环问题。上游 CLI 仍精确依赖受影响的 `1.11.0`；待上游依赖修复后再移除该 override。
+
 ## 页面组织
 
 - 工作台：总览、群组、通知归档、运行日志。
